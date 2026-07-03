@@ -288,7 +288,7 @@ function makeVariableLengthReader(
           'BUFFER_UNDERRUN',
         );
       }
-      return buffer.slice(offset, offset + length);
+      return buffer.subarray(offset, offset + length);
     };
   } else if (type === 'ascii') {
     return (buffer: Uint8Array, offset: number, length: number): string => {
@@ -389,7 +389,7 @@ function makeFieldReader(type: PrimitiveType, byteLength: number, endianness: En
         return readFloat64(buffer, offset, endianness);
 
       case 'bytes':
-        return buffer.slice(offset, offset + byteLength);
+        return buffer.subarray(offset, offset + byteLength);
 
       case 'ascii':
         return decodeASCII(buffer, offset, byteLength);
