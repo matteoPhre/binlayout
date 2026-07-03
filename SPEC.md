@@ -53,8 +53,7 @@ Each layer is an independent module, importable separately (no barrel file that 
     parser.ts          // compileSchema(), parse()
     types.ts           // InferSchemaType<T> (mapped/conditional types)
   /validation
-    strategies.ts       // ValidationStrategy interface
-    crc16.ts, crc32.ts, checksum8.ts   // built-in implementations
+    strategies.ts       // ValidationStrategy interface + adapter factory (no built-ins)
   /framing
     framer.ts           // Framer interface (contract only, no transport-specific implementation in the core package)
   /errors.ts             // typed error classes
@@ -148,6 +147,8 @@ interface ValidationStrategy {
 ```
 
 - Required built-in implementations: `crc16Ccitt`, `crc32`, `checksum8Xor`, `checksum8Sum`.
+- The core package does not ship built-in CRC/checksum algorithms.
+- Users inject their own strategy implementations (for example from external npm packages) via the `ValidationStrategy` contract.
 - Must be pure functions, no side effects, no allocations beyond the eventual scalar return value.
 - Integration with the schema is optional and decoupled: a `CompiledSchema` may accept a `ValidationStrategy` plus the byte range it applies to (e.g. "everything except the last field"), but the validation engine must also work standalone, without a Schema.
 
@@ -190,7 +191,7 @@ The core does NOT implement `LengthPrefixedFramer`, `DelimiterFramer`, etc. — 
 3. `types.ts`: mapped types for inference; verify in the IDE that `parse()` returns the correct types.
 4. Extend `parser.ts` for variable-length fields (`lengthFrom`).
 5. `parseInto` for the zero-alloc mode with a reused object.
-6. `validation/strategies.ts` + CRC16/CRC32/Checksum8, tested against published, well-known test vectors (not invented ones).
+6. `validation/strategies.ts` + injectable strategy adapter/factory, tested with numeric and binary custom validators.
 7. Optional validation + schema integration.
 8. `Framer` contract (interface only, no transport implementation in the core).
 9. Allocation micro-benchmark + performance benchmark on a realistic dataset.

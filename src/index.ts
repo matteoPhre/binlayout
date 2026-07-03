@@ -12,12 +12,22 @@ export { type InferSchemaType } from './core/types.js';
 
 // Validation
 export {
-  checksum8Sum,
-  checksum8Xor,
-  crc16Ccitt,
-  crc32,
+  createValidationStrategy,
+  type ValidationStrategyConfig,
+  type ValidationValue,
   type ValidationStrategy,
 } from './validation/strategies.js';
+
+// Framing contracts
+export { type Frame, type Framer } from './framing/framer.js';
+export {
+  decodeFramePayload,
+  decodeFramesPayload,
+  type DecodedTransportFrame,
+  type ParsedPayloadFrame,
+  type PayloadParser,
+  type TransportFrameDecoder,
+} from './framing/payload.js';
 
 // Errors
 export { SchemaCompileError, SchemaParseError, ValidationError } from './errors.js';
