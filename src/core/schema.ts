@@ -1,14 +1,14 @@
 /**
- * Definizioni di base per gli schema binari.
+ * Base definitions for binary schemas.
  */
 
 /**
- * Ordine dei byte: Big Endian (BE) o Little Endian (LE).
+ * Byte order: Big Endian (BE) or Little Endian (LE).
  */
 export type Endianness = 'BE' | 'LE';
 
 /**
- * Tipi primitivi supportati nel formato binario.
+ * Primitive types supported in binary format.
  */
 export type PrimitiveType =
   | 'uint8'
@@ -19,68 +19,68 @@ export type PrimitiveType =
   | 'int32'
   | 'float32'
   | 'float64'
-  | 'bytes'  // slice grezzo, lunghezza fissa o dinamica
-  | 'ascii'; // stringa a lunghezza fissa o terminata
+  | 'bytes'  // raw slice, fixed or variable length
+  | 'ascii'; // string, fixed or variable length
 
 /**
- * Definizione di un singolo campo binario.
+ * Definition of a single binary field.
  *
- * @template Name - Nome del campo (usato come chiave nel tipo di output)
+ * @template Name - Field name (used as key in output type)
  */
 export interface FieldDef<Name extends string = string> {
-  /** Nome univoco del campo nello schema. */
+  /** Unique field name in the schema. */
   readonly name: Name;
 
-  /** Tipo primitivo del campo. */
+  /** Primitive type of the field. */
   readonly type: PrimitiveType;
 
   /**
-   * Endianness per questo campo.
-   * Se omesso, usa il default dello schema.
+   * Endianness for this field.
+   * If omitted, uses schema default.
    */
   readonly endianness?: Endianness;
 
   /**
-   * Lunghezza fissa in byte (per 'bytes' e 'ascii').
-   * Se omesso e type è 'bytes'/'ascii', il campo è considerato dinamico
-   * e richiede 'lengthFrom'.
+   * Fixed length in bytes (for 'bytes' and 'ascii').
+   * If omitted and type is 'bytes'/'ascii', the field is dynamic
+   * and requires 'lengthFrom'.
    */
   readonly length?: number;
 
   /**
-   * Nome di un campo precedente che contiene la lunghezza di questo campo.
-   * Usato per campi a lunghezza variabile.
-   * Il campo referenziato deve essere di tipo numerico (uint8/uint16/uint32/int8/int16/int32).
+   * Name of a previous field that contains the length of this field.
+   * Used for variable-length fields.
+   * The referenced field must be numeric type (uint8/uint16/uint32/int8/int16/int32).
    */
   readonly lengthFrom?: string;
 
   /**
-   * Offset esplicito in byte dal inizio del buffer.
-   * Se omesso, è calcolato automaticamente in sequenza dal compilatore.
-   * Se specificato, il compilatore verifica che non vi siano sovrapposizioni.
+   * Explicit byte offset from buffer start.
+   * If omitted, automatically calculated sequentially by compiler.
+   * If specified, compiler verifies no overlaps.
    */
   readonly offset?: number;
 }
 
 /**
- * Definizione completa di uno schema binario.
+ * Complete definition of a binary schema.
  *
- * @template Fields - Array readonly dei FieldDef che compongono lo schema
+ * @template Fields - Readonly array of FieldDef composing the schema
  */
 export interface SchemaDef<Fields extends readonly FieldDef[] = readonly FieldDef[]> {
-  /** Nome simbolico dello schema (es. "ModbusRTUMessage"). */
+  /** Symbolic schema name (e.g., "ModbusRTUMessage"). */
   readonly name: string;
 
-  /** Endianness di default per tutti i campi che non lo specificano esplicitamente. */
+  /** Default endianness for all fields that don't specify it explicitly. */
   readonly endianness: Endianness;
 
-  /** Array readonly dei campi. Deve essere const-asserted per preservare i nomi letterali. */
+  /** Readonly array of fields. Must be const-asserted to preserve literal names. */
   readonly fields: Fields;
 }
 
 /**
- * Mappa dei byte length per ogni tipo primitivo (quando è fisso).
- * Per 'bytes' e 'ascii', la lunghezza dipende dal campo specifico.
+ * Map of byte lengths for each primitive type (when fixed).
+ * For 'bytes' and 'ascii', length depends on specific field.
  */
 export const PRIMITIVE_BYTE_SIZES: Record<PrimitiveType, number | null> = {
   'uint8': 1,

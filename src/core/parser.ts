@@ -1,11 +1,11 @@
 /**
- * Parser binario: compilazione e parsing di schema.
+ * Binary parser: schema compilation and parsing.
  *
- * Strategy per zero-alloc:
- * - compileSchema() viene chiamato una volta, può allocare strutture dati intermedie.
- * - parse() / parseInto() non allocano oltre all'oggetto risultato (o riusano quello fornito).
- * - Ogni campo ha una "reader function" precompilata e specializzata per tipo/endianness.
- * - Campi variabili vengono gestiti calcolando la lunghezza dal valore di un campo precedente.
+ * Strategy for zero-alloc:
+ * - compileSchema() is called once, can allocate intermediate data structures.
+ * - parse() / parseInto() do not allocate beyond the result object (or reuse the provided one).
+ * - Each field has a precompiled reader function specialized for type/endianness.
+ * - Variable fields are handled by calculating the length from the value of a previous field.
  */
 
 import {
@@ -17,36 +17,36 @@ import {
 import { SchemaCompileError, SchemaParseError } from '../errors.js';
 
 /**
- * Funzione specializzata per leggere un campo da un buffer.
- * Per campi fissi, offset è noto.
- * Per campi variabili, la lunghezza dipende da un precedente campo.
+ * Specialized function to read a field from a buffer.
+ * For fixed fields, offset is known.
+ * For variable fields, the length depends on a previous field.
  *
- * Ritorna il valore letto.
+ * Returns the read value.
  */
 type FieldReader = (buffer: Uint8Array, offset: number) => number | Uint8Array | string;
 
 /**
- * Definizione precompilata di come leggere un campo.
- * Discriminated union per fissi vs variabili.
+ * Precompiled definition of how to read a field.
+ * Discriminated union for fixed vs variable.
  */
 type CompiledFieldDef =
   | {
       readonly type: 'fixed';
       readonly name: string;
-      readonly offset: number; // offset assoluto noto
-      readonly byteLength: number; // lunghezza fissa
+      readonly offset: number; // known absolute offset
+      readonly byteLength: number; // fixed length
       readonly reader: FieldReader;
     }
   | {
       readonly type: 'variable';
       readonly name: string;
-      readonly offset: number; // offset assoluto noto fino a questo punto
-      readonly lengthFromFieldName: string; // nome del campo precedente che contiene la lunghezza
-      readonly reader: (buffer: Uint8Array, offset: number, length: number) => Uint8Array | string; // reader che accetta length
+      readonly offset: number; // known absolute offset up to this point
+      readonly lengthFromFieldName: string; // name of the previous field that contains the length
+      readonly reader: (buffer: Uint8Array, offset: number, length: number) => Uint8Array | string; // reader that accepts length
     };
 
 /**
- * Schema compilato, pronto per il parsing ripetuto zero-alloc.
+ * Compiled schema, ready for repeated zero-alloc parsing.
  */
 export interface CompiledSchema<_S extends SchemaDef = SchemaDef> {
   readonly name: string;
@@ -54,29 +54,29 @@ export interface CompiledSchema<_S extends SchemaDef = SchemaDef> {
   readonly fields: readonly CompiledFieldDef[];
 
   /**
-   * Esegue il parsing di un buffer e ritorna un oggetto con i campi tipizzati.
+   * Parses a buffer and returns an object with typed fields.
    */
-  parse(buffer: Uint8Array, offset?: number): any; // tipizzato da InferSchemaType<S>
+  parse(buffer: Uint8Array, offset?: number): any; // typed by InferSchemaType<S>
 
   /**
-   * Esegue il parsing di un buffer riusando un oggetto target.
-   * Zero-alloc: non crea un nuovo oggetto, ma popola il target fornito.
+   * Parses a buffer by reusing a target object.
+   * Zero-alloc: does not create a new object, but populates the provided target.
    */
   parseInto(buffer: Uint8Array, target: any, offset?: number): any;
 }
 
 /**
- * Compila uno schema una tantum.
- * Verifica la validità dello schema, calcola gli offset, genera le reader function specializzate.
+ * Compiles a schema once.
+ * Verifies the schema validity, calculates offsets, generates specialized reader functions.
  *
- * Throws SchemaCompileError se lo schema è malformato.
+ * Throws SchemaCompileError if the schema is malformed.
  */
 export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSchema<S> {
   const compiledFields: CompiledFieldDef[] = [];
   let runningOffset = 0;
   let hasVariableFields = false;
 
-  // Primo passaggio: valida e raccoglie info
+  // First pass: validate and collect info
   const fieldNames = new Set<string>();
   const fieldTypes: Record<string, PrimitiveType> = {};
 
@@ -91,17 +91,17 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
     fieldTypes[field.name] = field.type;
   }
 
-  // Secondo passaggio: compila i campi
+  // Second pass: compile fields
   for (const field of schema.fields) {
-    // Determina offset: esplicito o calcolato
+    // Determines offset: explicit or calculated
     const fieldOffset = field.offset !== undefined ? field.offset : runningOffset;
 
-    // Calcola lunghezza del campo
+    // Calculates field length
     const baseByteSize = PRIMITIVE_BYTE_SIZES[field.type];
     const isVariable = baseByteSize === null && field.length === undefined && field.lengthFrom !== undefined;
 
     if (isVariable) {
-      // Campi variabili: bytes/ascii con lengthFrom
+      // Variable fields: bytes/ascii with lengthFrom
       if (field.lengthFrom === undefined) {
         throw new SchemaCompileError(
           `Field '${field.name}' is variable-length but has no 'lengthFrom'`,
@@ -109,7 +109,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         );
       }
 
-      // Verifica che il campo referenziato esiste e è precedente
+      // Verifies that the referenced field exists and is previous
       const lengthFromIndex = compiledFields.findIndex((f) => f.name === field.lengthFrom);
       if (lengthFromIndex === -1) {
         throw new SchemaCompileError(
@@ -118,7 +118,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         );
       }
 
-      // Verifica che il campo referenziato è di tipo numerico
+      // Verifies that the referenced field is numeric type
       const lengthFromType = fieldTypes[field.lengthFrom];
       if (!lengthFromType) {
         throw new SchemaCompileError(
@@ -136,7 +136,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         );
       }
 
-      // Genera reader per campo variabile
+      // Generates reader for variable field
       const endianness = field.endianness ?? schema.endianness;
       const reader = makeVariableLengthReader(field.type, endianness);
 
@@ -149,9 +149,9 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
       });
 
       hasVariableFields = true;
-      // Non aggiornare runningOffset per campi variabili (non sappiamo la lunghezza a compile time)
+      // Do not update runningOffset for variable fields (we don't know the length at compile time)
     } else {
-      // Campi fissi
+      // Fixed fields
       if (field.length !== undefined && field.length <= 0) {
         throw new SchemaCompileError(
           `Field '${field.name}' has invalid byte length`,
@@ -167,7 +167,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         );
       }
 
-      // Verifica sovrapposizioni (solo tra campi fissi)
+      // Checks overlaps (only between fixed fields)
       for (const existing of compiledFields) {
         if (existing.type !== 'fixed') continue;
         const existingEnd = existing.offset + existing.byteLength;
@@ -180,7 +180,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         }
       }
 
-      // Genera reader function specializzata
+      // Generates specialized reader function
       const endianness = field.endianness ?? schema.endianness;
       const reader = makeFieldReader(field.type, byteLength, endianness);
 
@@ -192,14 +192,14 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         reader,
       });
 
-      // Aggiorna running offset (per il prossimo campo, solo se non è variabile il precedente)
+      // Updates running offset (for the next field, only if the previous is not variable)
       if (field.offset === undefined && !hasVariableFields) {
         runningOffset = fieldOffset + byteLength;
       }
     }
   }
 
-  // Calcola lunghezza totale dello schema
+  // Calculates total schema length
   let totalByteLength: number | null = null;
   if (!hasVariableFields) {
     totalByteLength =
@@ -212,7 +212,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         : 0;
   }
 
-  // Ritorna lo schema compilato
+  // Returns the compiled schema
   return {
     name: schema.name,
     byteLength: totalByteLength,
@@ -226,7 +226,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
           const value = field.reader(buffer, offset + field.offset);
           result[field.name] = value;
         } else {
-          // Campo variabile: leggi la lunghezza dal campo precedente
+          // Variable field: read the length from the previous field
           const lengthValue = result[field.lengthFromFieldName];
           if (typeof lengthValue !== 'number') {
             throw new SchemaParseError(
@@ -250,7 +250,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
           const value = field.reader(buffer, offset + field.offset);
           target[field.name] = value;
         } else {
-          // Campo variabile: leggi la lunghezza dal campo precedente
+          // Variable field: read the length from the previous field
           const lengthValue = target[field.lengthFromFieldName];
           if (typeof lengthValue !== 'number') {
             throw new SchemaParseError(
@@ -271,8 +271,8 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
 }
 
 /**
- * Crea un reader per campi a lunghezza variabile.
- * La lunghezza viene passata al momento del parsing.
+ * Creates a reader for variable-length fields.
+ * The length is passed at parsing time.
  */
 function makeVariableLengthReader(
   type: PrimitiveType,
@@ -308,12 +308,12 @@ function makeVariableLengthReader(
 }
 
 /**
- * Crea una FieldReader specializzata per il tipo, lunghezza e endianness forniti.
- * Per campi a lunghezza fissa.
+ * Creates a specialized FieldReader for the provided type, length, and endianness.
+ * For fixed-length fields.
  */
 function makeFieldReader(type: PrimitiveType, byteLength: number, endianness: Endianness): FieldReader {
   return (buffer: Uint8Array, offset: number): number | Uint8Array | string => {
-    // Verifica bounds
+    // Checks bounds
     if (offset + byteLength > buffer.length) {
       throw new SchemaParseError(
         `Insufficient buffer: expected at least ${byteLength} bytes at offset ${offset}, got ${buffer.length - offset}`,
@@ -323,7 +323,7 @@ function makeFieldReader(type: PrimitiveType, byteLength: number, endianness: En
       );
     }
 
-    // Reader per tipo
+    // Reader for type
     switch (type) {
       case 'uint8':
         return buffer[offset]!;
@@ -402,10 +402,10 @@ function makeFieldReader(type: PrimitiveType, byteLength: number, endianness: En
 }
 
 /**
- * Legge un float32 dal buffer.
+ * Reads a float32 from the buffer.
  */
 function readFloat32(buffer: Uint8Array, offset: number, endianness: Endianness): number {
-  // Converti i 4 byte in un uint32, poi interpreta come float32
+  // Converts 4 bytes to a uint32, then interprets as float32
   let u32: number;
   if (endianness === 'LE') {
     u32 =
@@ -423,7 +423,7 @@ function readFloat32(buffer: Uint8Array, offset: number, endianness: Endianness)
       0;
   }
 
-  // Interpreta bit per bit come float32 (IEEE 754)
+  // Interprets bit by bit as float32 (IEEE 754)
   const sign = (u32 >> 31) & 1 ? -1 : 1;
   const exponent = (u32 >> 23) & 0xff;
   const mantissa = u32 & 0x7fffff;
@@ -439,7 +439,7 @@ function readFloat32(buffer: Uint8Array, offset: number, endianness: Endianness)
 }
 
 /**
- * Legge un float64 dal buffer.
+ * Reads a float64 from the buffer.
  */
 function readFloat64(buffer: Uint8Array, offset: number, endianness: Endianness): number {
   let lo: number, hi: number;
@@ -488,7 +488,7 @@ function readFloat64(buffer: Uint8Array, offset: number, endianness: Endianness)
 }
 
 /**
- * Decodifica una stringa ASCII da un buffer.
+ * Decodes an ASCII string from a buffer.
  */
 function decodeASCII(buffer: Uint8Array, offset: number, byteLength: number): string {
   let result = '';

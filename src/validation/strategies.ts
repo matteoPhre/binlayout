@@ -1,35 +1,35 @@
 /**
- * Strategie di validazione: interfaccia e implementazioni predefinite.
+ * Validation strategies: interface and predefined implementations.
  *
- * Tutte le funzioni sono pure e stateless.
+ * All functions are pure and stateless.
  */
 
 /**
- * Strategia di validazione generica.
- * Compute ritorna il valore calcolato; verify controlla che un dato corrisponda al valore atteso.
+ * Generic validation strategy.
+ * Compute returns the calculated value; verify checks that a datum matches the expected value.
  */
 export interface ValidationStrategy {
   readonly name: string;
 
   /**
-   * Calcola il valore di validazione per un buffer.
-   * @param data Buffer binario su cui calcolare il checksum/CRC.
-   * @returns Valore di validazione (numero o Uint8Array).
+   * Calculates the validation value for a buffer.
+   * @param data Binary buffer to calculate the checksum/CRC on.
+   * @returns Validation value (number or Uint8Array).
    */
   compute(data: Uint8Array): number | Uint8Array;
 
   /**
-   * Verifica che il dato corrisponda al valore calcolato.
-   * @param data Buffer da validare.
-   * @param expected Valore atteso (numero o Uint8Array).
-   * @returns true se valido, false altrimenti.
+   * Verifies that the datum matches the calculated value.
+   * @param data Buffer to validate.
+   * @param expected Expected value (number or Uint8Array).
+   * @returns true if valid, false otherwise.
    */
   verify(data: Uint8Array, expected: number | Uint8Array): boolean;
 }
 
 /**
  * CRC16-CCITT (0x1021, init 0xFFFF, final XOR 0xFFFF).
- * Comunemente usato in Modbus RTU, HDLC e altri protocolli.
+ * Commonly used in Modbus RTU, HDLC and other protocols.
  */
 export const crc16Ccitt: ValidationStrategy = {
   name: 'crc16-ccitt',
@@ -61,7 +61,7 @@ export const crc16Ccitt: ValidationStrategy = {
 
 /**
  * CRC32 (IEEE 802.3, polynomial 0x04C11DB7).
- * Comunemente usato in Ethernet, ZIP, e molti altri protocolli.
+ * Commonly used in Ethernet, ZIP, and many other protocols.
  */
 export const crc32: ValidationStrategy = {
   name: 'crc32',
@@ -86,8 +86,8 @@ export const crc32: ValidationStrategy = {
 };
 
 /**
- * Checksum8 XOR: accumula XOR di tutti i byte.
- * Semplice e leggero.
+ * Checksum8 XOR: accumulates XOR of all bytes.
+ * Simple and lightweight.
  */
 export const checksum8Xor: ValidationStrategy = {
   name: 'checksum8-xor',
@@ -107,8 +107,8 @@ export const checksum8Xor: ValidationStrategy = {
 };
 
 /**
- * Checksum8 Sum: accumula sum di tutti i byte, modulo 256.
- * Comunemente usato in protocolli semplici.
+ * Checksum8 Sum: accumulates sum of all bytes, modulo 256.
+ * Commonly used in simple protocols.
  */
 export const checksum8Sum: ValidationStrategy = {
   name: 'checksum8-sum',
@@ -128,8 +128,8 @@ export const checksum8Sum: ValidationStrategy = {
 };
 
 /**
- * Genera la lookup table per CRC32.
- * Calcolato una volta, non ripetuto per ogni compute.
+ * Generates the lookup table for CRC32.
+ * Calculated once, not repeated for each compute.
  */
 function makeCrc32Table(): Uint32Array {
   const table = new Uint32Array(256);

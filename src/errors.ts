@@ -1,11 +1,11 @@
 /**
- * Classi di errore tipizzate per il parsing binario.
- * Ogni errore ha campi strutturati per permettere il recovery programmatico.
+ * Typed error classes for binary parsing.
+ * Each error has structured fields to enable programmatic recovery.
  */
 
 /**
- * Errore di parsing schema.
- * Lanciato quando il buffer è insufficiente o malformato per lo schema.
+ * Schema parse error.
+ * Thrown when buffer is insufficient or malformed for the schema.
  */
 export class SchemaParseError extends Error {
   readonly name = 'SchemaParseError';
@@ -22,8 +22,8 @@ export class SchemaParseError extends Error {
 }
 
 /**
- * Errore di compilazione schema.
- * Lanciato quando lo schema è malformato (es. offset sovrapposti).
+ * Schema compile error.
+ * Thrown when schema is malformed (e.g., overlapping offsets).
  */
 export class SchemaCompileError extends Error {
   readonly name = 'SchemaCompileError';
@@ -38,8 +38,8 @@ export class SchemaCompileError extends Error {
 }
 
 /**
- * Errore di validazione.
- * Lanciato quando un dato non passa la validazione (es. CRC mismatch).
+ * Validation error.
+ * Thrown when data fails validation (e.g., CRC mismatch).
  */
 export class ValidationError extends Error {
   readonly name = 'ValidationError';

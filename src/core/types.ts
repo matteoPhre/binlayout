@@ -1,24 +1,24 @@
 /**
- * Type inference per schema binari.
- * Mappa uno schema a un tipo TypeScript nativo e tipizzato.
+ * Type inference for binary schemas.
+ * Maps a schema to a native, typed TypeScript type.
  */
 
 import type { FieldDef, SchemaDef } from './schema.js';
 
 /**
- * Mappa un tipo primitivo al suo corrispondente TypeScript.
+ * Maps a primitive type to its corresponding TypeScript type.
  */
 export type FieldTSType<F extends FieldDef> = F['type'] extends 'bytes'
   ? Uint8Array
   : F['type'] extends 'ascii'
     ? string
-    : number; // tutti gli integer e float diventano number
+    : number; // all integers and floats become number
 
 /**
- * Inferisce il tipo di output da uno schema.
- * Produce un oggetto con chiavi come i field names e valori tipizzati secondo il tipo primitivo.
+ * Infers output type from a schema.
+ * Produces an object with keys like field names and values typed by primitive type.
  *
- * Esempio:
+ * Example:
  * ```ts
  * const schema = {
  *   name: 'Msg',

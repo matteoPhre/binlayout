@@ -1,15 +1,15 @@
 /**
- * Benchmark: verificare performance nel hot path.
- * Esegue 10.000 parseInto consecutivi e misura velocità e allocazioni.
+ * Benchmark: verify performance in the hot path.
+ * Performs 10,000 consecutive parseInto calls and measures speed and allocations.
  *
- * Nota: allocazioni da campi 'bytes' sono necessarie (Uint8Array); il resto è zero-alloc.
+ * Note: allocations from 'bytes' fields are necessary (Uint8Array); the rest is zero-alloc.
  *
- * Esegui: npm run build && node --expose-gc dist/benchmark.js
+ * Run: npm run build && node --expose-gc dist/benchmark.js
  */
 
 import { compileSchema } from './core/parser.js';
 
-// Schema realistico (Modbus-like): 6 campi numerici + 1 bytes + 1 uint16 CRC
+// Realistic schema (Modbus-like): 6 numeric fields + 1 bytes + 1 uint16 CRC
 const schema = {
   name: 'ModbusMsg',
   endianness: 'LE' as const,
@@ -19,7 +19,7 @@ const schema = {
     { name: 'regAddr', type: 'uint16' as const },
     { name: 'regCount', type: 'uint16' as const },
     { name: 'byteCount', type: 'uint8' as const },
-    { name: 'registers', type: 'bytes' as const, length: 20 }, // allocazione necessaria
+    { name: 'registers', type: 'bytes' as const, length: 20 }, // necessary allocation
     { name: 'crc', type: 'uint16' as const },
   ] as const,
 };
@@ -44,7 +44,7 @@ for (let i = 0; i < 100; i++) {
   compiled.parseInto(buffer, target);
 }
 
-// Benchmark: 10.000 iterations
+// Benchmark: 10,000 iterations
 const ITERATIONS = 10000;
 
 if (global.gc) {

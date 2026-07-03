@@ -1,46 +1,46 @@
 /**
- * Contratto (interface) per Framing.
+ * Contract (interface) for Framing.
  *
- * Il Framer è responsabile di:
- * 1. Accumulare chunk di dati da un flusso (seriale, TCP, ecc.)
- * 2. Individuare i confini dei messaggi completi
- * 3. Ritornare Frame oggetti che contengono i messaggi completi
+ * The Framer is responsible for:
+ * 1. Accumulating data chunks from a stream (serial, TCP, etc.)
+ * 2. Detecting complete message boundaries
+ * 3. Returning Frame objects containing complete messages
  *
- * Nota: Le implementazioni concrete (LengthPrefixedFramer, DelimiterFramer, ecc.)
- * vanno in pacchetti/moduli separati, NON nel core binlayout.
- * Questo mantiene il principio "zero-dipendenze" e permette a chi usa solo il parser
- * di non caricare logica di framing.
+ * Note: Concrete implementations (LengthPrefixedFramer, DelimiterFramer, etc.)
+ * go in separate packages/modules, NOT in core binlayout.
+ * This maintains "zero-dependencies" principle and allows users of just the parser
+ * to not load framing logic.
  */
 
 /**
- * Un messaggio completo estratto da un flusso.
- * Contiene i dati binari e un timestamp opzionale.
+ * A complete message extracted from a stream.
+ * Contains binary data and optional timestamp.
  */
 export interface Frame {
-  /** I dati del frame (buffer binario). */
+  /** The frame data (binary buffer). */
   readonly data: Uint8Array;
 
-  /** Timestamp di quando il frame è stato ricevuto (millisecondi epoch). */
+  /** Timestamp when frame was received (milliseconds epoch). */
   readonly timestamp: number;
 }
 
 /**
- * Contratto per le implementazioni di framing (stateful).
- * Accoglie dati in ingresso e produce Frame completi.
+ * Contract for framing implementations (stateful).
+ * Consumes incoming data and produces complete Frame objects.
  */
 export interface Framer {
   /**
-   * Alimenta il framer con un chunk di dati.
-   * Può ritornare 0, 1 o più frame completi se ne individua i confini.
+   * Feeds the framer with a chunk of data.
+   * Can return 0, 1 or more complete frames if boundaries are detected.
    *
-   * @param chunk Buffer binario da elaborare.
-   * @returns Array di Frame completi estratti (può essere vuoto se il frame non è ancora completo).
+   * @param chunk Binary buffer to process.
+   * @returns Array of complete Frame objects extracted (may be empty if frame not yet complete).
    */
   feed(chunk: Uint8Array): Frame[];
 
   /**
-   * Resetta lo stato interno del framer.
-   * Utile dopo errori di parsing per risincronizzarsi.
+   * Resets internal framer state.
+   * Useful after parsing errors to resynchronize.
    */
   reset(): void;
 }
