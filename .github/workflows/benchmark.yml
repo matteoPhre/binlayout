@@ -1,12 +1,18 @@
 name: Benchmark
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches: [main]
 
 jobs:
   benchmark:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    env:
+      MIN_PARSE_INTO_OPS_PER_SEC: '1000000'
+      MAX_PARSE_INTO_RETAINED_PER_OP: '32'
+      MAX_PARSE_RETAINED_PER_OP: '128'
     steps:
       - uses: actions/checkout@v4
       
@@ -23,4 +29,25 @@ jobs:
         run: npm run build
       
       - name: Run benchmark
-        run: npm run benchmark
+        run: npm run benchmark | tee benchmark-output.txt
+
+      - name: Enforce benchmark thresholds
+        run: |
+          node -e "const fs=require('fs'); const out=fs.readFileSync('benchmark-output.txt','utf8');
+          const parseIntoBlock = out.match(/TEST 1:[\s\S]*?(?=━━━━━━━━|$)/);
+          const parseBlock = out.match(/TEST 2:[\s\S]*?(?=━━━━━━━━|$)/);
+          if (!parseIntoBlock || !parseBlock) { console.error('Could not parse benchmark sections.'); process.exit(1); }
+          const parseIntoOps = Number((parseIntoBlock[0].match(/Ops\/sec:\s*([0-9.]+)/)||[])[1]);
+          const parseIntoRetained = Number((parseIntoBlock[0].match(/Retained\/op:\s*([0-9.]+)/)||[])[1]);
+          const parseRetained = Number((parseBlock[0].match(/Retained\/op:\s*([0-9.]+)/)||[])[1]);
+          if (!Number.isFinite(parseIntoOps) || !Number.isFinite(parseIntoRetained) || !Number.isFinite(parseRetained)) {
+            console.error('Benchmark metrics missing or invalid.');
+            process.exit(1);
+          }
+          const minOps = Number(process.env.MIN_PARSE_INTO_OPS_PER_SEC);
+          const maxParseIntoRetained = Number(process.env.MAX_PARSE_INTO_RETAINED_PER_OP);
+          const maxParseRetained = Number(process.env.MAX_PARSE_RETAINED_PER_OP);
+          if (parseIntoOps < minOps) { console.error('parseInto ops/sec below threshold:', parseIntoOps, '<', minOps); process.exit(1); }
+          if (parseIntoRetained > maxParseIntoRetained) { console.error('parseInto retained/op above threshold:', parseIntoRetained, '>', maxParseIntoRetained); process.exit(1); }
+          if (parseRetained > maxParseRetained) { console.error('parse retained/op above threshold:', parseRetained, '>', maxParseRetained); process.exit(1); }
+          console.log('Benchmark thresholds satisfied.');" 

@@ -1,13 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [main, dev]
   pull_request:
-    branches: [main, dev]
+    types: [closed]
+    branches: [main, develop]
 
 jobs:
   test:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     strategy:
       matrix:
