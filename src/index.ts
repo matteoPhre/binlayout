@@ -19,5 +19,16 @@ export {
   type ValidationStrategy,
 } from './validation/strategies.js';
 
+// Framing contracts
+export { type Frame, type Framer } from './framing/framer.js';
+export {
+  decodeFramePayload,
+  decodeFramesPayload,
+  type DecodedTransportFrame,
+  type ParsedPayloadFrame,
+  type PayloadParser,
+  type TransportFrameDecoder,
+} from './framing/payload.js';
+
 // Errors
 export { SchemaCompileError, SchemaParseError, ValidationError } from './errors.js';

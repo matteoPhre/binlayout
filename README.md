@@ -86,6 +86,49 @@ const buffer = new Uint8Array([0x03, 0xAA, 0xBB, 0xCC]);
 const msg = compiled.parse(buffer); // { len: 3, payload: Uint8Array([0xAA, 0xBB, 0xCC]) }
 ```
 
+### Transport framing + custom payload parser
+
+If your protocol has a transport envelope plus an application payload (for example STX/ETX framing + embedded YSON/JSON), you can keep the layers separate:
+
+```ts
+import {
+  decodeFramePayload,
+  type Frame,
+  type PayloadParser,
+  type TransportFrameDecoder,
+} from '@matteophre/binlayout';
+
+type Header = {
+  address: string;
+  packetType: string;
+  packetId: number;
+};
+
+const transportDecoder: TransportFrameDecoder<Header, Uint8Array> = {
+  decode(frame: Frame) {
+    const data = frame.data;
+    return {
+      header: {
+        address: String.fromCharCode(data[1]!),
+        packetType: String.fromCharCode(data[2]!),
+        packetId: data[3]!,
+      },
+      payload: data.subarray(4, data.length - 3), // before checksum + ETX
+    };
+  },
+};
+
+const appPayloadParser: PayloadParser<Uint8Array, Record<string, unknown>> = {
+  parse(payload) {
+    return JSON.parse(new TextDecoder().decode(payload)) as Record<string, unknown>;
+  },
+};
+
+const parsed = decodeFramePayload(frame, transportDecoder, appPayloadParser);
+// parsed.header -> transport metadata
+// parsed.payload -> typed application message
+```
+
 ## Supported types
 
 - **Numeric**: `uint8`, `uint16`, `uint32`, `int8`, `int16`, `int32`, `float32`, `float64`
@@ -101,6 +144,7 @@ const msg = compiled.parse(buffer); // { len: 3, payload: Uint8Array([0xAA, 0xBB
 - **Flexible endianness**: per-schema default or per-field override.
 - **Variable-length fields**: fields can depend on previous numeric fields.
 - **Validation strategies**: built-in CRC16, CRC32, Checksum8 (pluggable).
+- **Pluggable payload parsing**: decode transport headers separately and pass a custom parser for application data.
 
 ## Architecture
 
