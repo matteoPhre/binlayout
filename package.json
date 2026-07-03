@@ -1,0 +1,44 @@
+{
+  "name": "@matteophre/binlayout",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Zero-dependency, zero-alloc TypeScript library for deterministic binary message parsing and validation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --no-warnings --experimental-vm-modules node_modules/vitest/vitest.mjs run",
+    "test:watch": "node --no-warnings --experimental-vm-modules node_modules/vitest/vitest.mjs",
+    "benchmark": "node --expose-gc dist/benchmark.js",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^0.34.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "keywords": [
+    "binary",
+    "parsing",
+    "schema",
+    "validation",
+    "crc",
+    "checksum",
+    "zero-copy",
+    "zero-alloc"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matteophre/binlayout.git"
+  }
+}
