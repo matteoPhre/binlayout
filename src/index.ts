@@ -12,10 +12,9 @@ export { type InferSchemaType } from './core/types.js';
 
 // Validation
 export {
-  checksum8Sum,
-  checksum8Xor,
-  crc16Ccitt,
-  crc32,
+  createValidationStrategy,
+  type ValidationStrategyConfig,
+  type ValidationValue,
   type ValidationStrategy,
 } from './validation/strategies.js';
 
