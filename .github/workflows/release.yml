@@ -13,6 +13,16 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure tag commit is on main
+        run: |
+          git fetch origin main --no-tags
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
+            echo "Tag ${GITHUB_REF_NAME} is not on main. Release is allowed only for tags on main."
+            exit 1
+          fi
       
       - name: Use Node.js
         uses: actions/setup-node@v4
