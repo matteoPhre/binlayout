@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "Zero-dependency, zero-alloc TypeScript library for deterministic binary message parsing and validation",
+  "description": "Zero-dependency TypeScript library for deterministic binary message parsing and validation",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

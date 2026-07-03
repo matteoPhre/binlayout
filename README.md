@@ -1,6 +1,9 @@
 # @matteophre/binlayout
 
-Zero-dependency, zero-alloc TypeScript library for deterministic binary message parsing and validation.
+Zero-dependency TypeScript library for deterministic binary message parsing and validation.
+
+> **Note on "zero-alloc":** This library prioritizes correctness and flexibility. JavaScript objects inherently allocate memory. For true zero-alloc requirements, use `parseInto()` with a pre-allocated target object in a hot path, where numeric fields won't allocate additional memory. The `bytes` fields will always create Uint8Array views, which are necessary for safe data access.
+
 
 ## Objective
 
