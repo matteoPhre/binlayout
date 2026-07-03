@@ -56,13 +56,13 @@ export interface CompiledSchema<_S extends SchemaDef = SchemaDef> {
   /**
    * Parses a buffer and returns an object with typed fields.
    */
-  parse(buffer: Uint8Array, offset?: number): any; // typed by InferSchemaType<S>
+  parse(buffer: Uint8Array, offset?: number): Record<string, unknown>; // typed by InferSchemaType<S>
 
   /**
    * Parses a buffer by reusing a target object.
    * Zero-alloc: does not create a new object, but populates the provided target.
    */
-  parseInto(buffer: Uint8Array, target: any, offset?: number): any;
+  parseInto(buffer: Uint8Array, target: Record<string, unknown>, offset?: number): Record<string, unknown>;
 }
 
 /**
@@ -218,8 +218,8 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
     byteLength: totalByteLength,
     fields: compiledFields,
 
-    parse(buffer: Uint8Array, offset = 0): any {
-      const result: any = {};
+    parse(buffer: Uint8Array, offset = 0): Record<string, unknown> {
+      const result: Record<string, unknown> = {};
 
       for (const field of compiledFields) {
         if (field.type === 'fixed') {
@@ -244,7 +244,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
       return result;
     },
 
-    parseInto(buffer: Uint8Array, target: any, offset = 0): any {
+    parseInto(buffer: Uint8Array, target: Record<string, unknown>, offset = 0): Record<string, unknown> {
       for (const field of compiledFields) {
         if (field.type === 'fixed') {
           const value = field.reader(buffer, offset + field.offset);

@@ -15,7 +15,7 @@
     "test": "node --no-warnings --experimental-vm-modules node_modules/vitest/vitest.mjs run",
     "test:watch": "node --no-warnings --experimental-vm-modules node_modules/vitest/vitest.mjs",
     "benchmark": "node --expose-gc dist/benchmark.js",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src test",
     "clean": "rm -rf dist node_modules"
   },
   "devDependencies": {

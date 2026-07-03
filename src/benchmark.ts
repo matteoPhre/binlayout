@@ -37,7 +37,7 @@ const buffer = new Uint8Array([
 ]);
 
 // Preallocate reuse object (zero-alloc for numeric fields)
-const target: any = {};
+const target: Record<string, unknown> = {};
 
 // Warm-up
 for (let i = 0; i < 100; i++) {
@@ -68,6 +68,7 @@ const totalAllocKB = (heapUsedDelta + externalDelta) / 1024;
 const opsPerSecond = (ITERATIONS / durationMs) * 1000;
 const bytesAllocPerOp = totalAllocKB * 1024 / ITERATIONS;
 
+// eslint-disable-next-line no-console
 console.log(`
 Benchmark Results (${ITERATIONS} iterations):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
