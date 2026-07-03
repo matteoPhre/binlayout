@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write 
+      id-token: write # Fondamentale: permette a GitHub di generare il token OIDC
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,6 +30,7 @@ jobs:
         with:
           node-version: '20.x'
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org' # Serve per far capire a npm dove autenticarsi
       
       - name: Install dependencies
         run: npm ci
@@ -39,10 +40,18 @@ jobs:
       
       - name: Run tests
         run: npm test
-      - name: Publish to npm via Trusted Publisher
-        uses: npm/action-publish@v3      
+      
+      # Usiamo il comando standard. Se il pacchetto è scoped (es. @matteophre/binlayout),
+      # aggiungi --access public se non lo hai già definito nel package.json
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          # NOTA CANCELLATA: NON passare NODE_AUTH_TOKEN.
+          # Avendo messo id-token: write, npm capisce da solo di dover usare OIDC.
+          NPM_CONFIG_PROVENANCE: true # Opzionale ma consigliato: genera la provenienza crittografica su npm
+      
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2 # Aggiornato alla v2 stagna
         with:
           body: |
             Release for ${{ github.ref_name }}
