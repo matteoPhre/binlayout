@@ -1,7 +1,9 @@
 /**
- * Benchmark: compare allocation strategies.
- * 1. parseInto() - reuses target object (true zero-alloc for numeric fields)
- * 2. parse() - creates new object each time (measures object allocation overhead)
+ * Benchmark: compare parseInto() vs parse() in a realistic scenario.
+ *
+ * Important:
+ * - `process.memoryUsage()` reports retained memory snapshots, not exact allocations.
+ * - Values can be noisy across runs due to V8/GC heuristics.
  *
  * Run: npm run build && node --expose-gc dist/benchmark.js
  */
@@ -34,40 +36,73 @@ const buffer = new Uint8Array([
 
 const ITERATIONS = 10000;
 
+function formatSignedKB(bytes: number): string {
+  const sign = bytes > 0 ? '+' : '';
+  return `${sign}${(bytes / 1024).toFixed(2)} KB`;
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]!;
+}
+
 // ============================================================================
-// Test 1: parseInto() - reuses target object (ZERO-ALLOC for numerics)
+// Test 1: parseInto() - reused target object
 // ============================================================================
 
-const target: Record<string, unknown> = {};
+const target: Record<string, unknown> = {
+  slaveId: 0,
+  funcCode: 0,
+  regAddr: 0,
+  regCount: 0,
+  byteCount: 0,
+  registers: buffer.subarray(7, 27),
+  crc: 0,
+};
 
 // Warm-up
 for (let i = 0; i < 100; i++) {
   compiled.parseInto(buffer, target);
 }
 
-if (global.gc) {
-  (global.gc as Function)();
+const parseIntoDurationsMs: number[] = [];
+const parseIntoTotalDeltaBytes: number[] = [];
+let parseIntoChecksum = 0;
+
+for (let round = 0; round < 5; round++) {
+  if (global.gc) {
+    (global.gc as Function)();
+  }
+
+  const memBefore = process.memoryUsage();
+  const timeBefore = process.hrtime.bigint();
+
+  for (let i = 0; i < ITERATIONS; i++) {
+    compiled.parseInto(buffer, target);
+    const crcValue = target.crc;
+    if (typeof crcValue === 'number') {
+      parseIntoChecksum += crcValue;
+    }
+  }
+
+  if (global.gc) {
+    (global.gc as Function)();
+  }
+
+  const timeAfter = process.hrtime.bigint();
+  const memAfter = process.memoryUsage();
+
+  parseIntoDurationsMs.push(Number(timeAfter - timeBefore) / 1_000_000);
+  parseIntoTotalDeltaBytes.push((memAfter.heapUsed - memBefore.heapUsed) + (memAfter.external - memBefore.external));
 }
 
-const mem1Before = process.memoryUsage();
-const time1Before = process.hrtime.bigint();
-
-for (let i = 0; i < ITERATIONS; i++) {
-  compiled.parseInto(buffer, target);
-}
-
-const time1After = process.hrtime.bigint();
-const mem1After = process.memoryUsage();
-
-const duration1Ms = Number(time1After - time1Before) / 1_000_000;
-const heapDelta1 = mem1After.heapUsed - mem1Before.heapUsed;
-const extDelta1 = mem1After.external - mem1Before.external;
-const totalAlloc1KB = (heapDelta1 + extDelta1) / 1024;
+const duration1Ms = median(parseIntoDurationsMs);
+const totalDelta1Bytes = median(parseIntoTotalDeltaBytes);
 const ops1PerSecond = (ITERATIONS / duration1Ms) * 1000;
-const bytesPerOp1 = totalAlloc1KB * 1024 / ITERATIONS;
+const bytesPerOp1 = totalDelta1Bytes / ITERATIONS;
 
 // ============================================================================
-// Test 2: parse() - creates new object each time
+// Test 2: parse() - creates a new object each call
 // ============================================================================
 
 // Warm-up
@@ -75,26 +110,41 @@ for (let i = 0; i < 100; i++) {
   compiled.parse(buffer);
 }
 
-if (global.gc) {
-  (global.gc as Function)();
+const parseDurationsMs: number[] = [];
+const parseTotalDeltaBytes: number[] = [];
+let parseChecksum = 0;
+
+for (let round = 0; round < 5; round++) {
+  if (global.gc) {
+    (global.gc as Function)();
+  }
+
+  const memBefore = process.memoryUsage();
+  const timeBefore = process.hrtime.bigint();
+
+  for (let i = 0; i < ITERATIONS; i++) {
+    const parsed = compiled.parse(buffer);
+    const crcValue = parsed.crc;
+    if (typeof crcValue === 'number') {
+      parseChecksum += crcValue;
+    }
+  }
+
+  if (global.gc) {
+    (global.gc as Function)();
+  }
+
+  const timeAfter = process.hrtime.bigint();
+  const memAfter = process.memoryUsage();
+
+  parseDurationsMs.push(Number(timeAfter - timeBefore) / 1_000_000);
+  parseTotalDeltaBytes.push((memAfter.heapUsed - memBefore.heapUsed) + (memAfter.external - memBefore.external));
 }
 
-const mem2Before = process.memoryUsage();
-const time2Before = process.hrtime.bigint();
-
-for (let i = 0; i < ITERATIONS; i++) {
-  compiled.parse(buffer);
-}
-
-const time2After = process.hrtime.bigint();
-const mem2After = process.memoryUsage();
-
-const duration2Ms = Number(time2After - time2Before) / 1_000_000;
-const heapDelta2 = mem2After.heapUsed - mem2Before.heapUsed;
-const extDelta2 = mem2After.external - mem2Before.external;
-const totalAlloc2KB = (heapDelta2 + extDelta2) / 1024;
+const duration2Ms = median(parseDurationsMs);
+const totalDelta2Bytes = median(parseTotalDeltaBytes);
 const ops2PerSecond = (ITERATIONS / duration2Ms) * 1000;
-const bytesPerOp2 = totalAlloc2KB * 1024 / ITERATIONS;
+const bytesPerOp2 = totalDelta2Bytes / ITERATIONS;
 
 // ============================================================================
 // Report
@@ -103,25 +153,19 @@ const bytesPerOp2 = totalAlloc2KB * 1024 / ITERATIONS;
 // eslint-disable-next-line no-console
 console.log(`
 Benchmark Comparison (${ITERATIONS} iterations):
+Median of 5 rounds (each round forced GC before/after)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📊 TEST 1: parseInto() with reused target (ZERO-ALLOC path)
+📊 TEST 1: parseInto() with reused target
 ────────────────────────────────────────────────────────
 Duration:        ${duration1Ms.toFixed(2)} ms
 Ops/sec:         ${ops1PerSecond.toFixed(0)} ops/sec
-Time per op:     ${(duration1Ms / ITERATIONS).toFixed(3)} ms
-Bytes per op:    ${bytesPerOp1.toFixed(1)} bytes
+Time per op:     ${((duration1Ms * 1000) / ITERATIONS).toFixed(3)} us
+Retained/op:     ${bytesPerOp1.toFixed(1)} bytes
+Checksum:        ${parseIntoChecksum}
 
-Memory Delta:
-  Heap used:     ${heapDelta1 > 0 ? '+' : ''}${(heapDelta1 / 1024).toFixed(2)} KB
-  External:      ${extDelta1 > 0 ? '+' : ''}${(extDelta1 / 1024).toFixed(2)} KB
-  Total alloc:   ${totalAlloc1KB.toFixed(2)} KB
-
-Analysis:
-  Expected: ~${(20 * ITERATIONS / 1024).toFixed(0)} KB (bytes field: 20 bytes/op × ${ITERATIONS})
-  Actual:   ${totalAlloc1KB.toFixed(2)} KB
-  → Numeric fields: ZERO-ALLOC (reused target object) ✓
-  → Only bytes field allocates (Uint8Array.subarray views)
+Retained memory delta (heap+external):
+  Total:         ${formatSignedKB(totalDelta1Bytes)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -129,25 +173,22 @@ Analysis:
 ────────────────────────────────────────────────────────
 Duration:        ${duration2Ms.toFixed(2)} ms
 Ops/sec:         ${ops2PerSecond.toFixed(0)} ops/sec
-Time per op:     ${(duration2Ms / ITERATIONS).toFixed(3)} ms
-Bytes per op:    ${bytesPerOp2.toFixed(1)} bytes
+Time per op:     ${((duration2Ms * 1000) / ITERATIONS).toFixed(3)} us
+Retained/op:     ${bytesPerOp2.toFixed(1)} bytes
+Checksum:        ${parseChecksum}
 
-Memory Delta:
-  Heap used:     ${heapDelta2 > 0 ? '+' : ''}${(heapDelta2 / 1024).toFixed(2)} KB
-  External:      ${extDelta2 > 0 ? '+' : ''}${(extDelta2 / 1024).toFixed(2)} KB
-  Total alloc:   ${totalAlloc2KB.toFixed(2)} KB
+Retained memory delta (heap+external):
+  Total:         ${formatSignedKB(totalDelta2Bytes)}
 
-Overhead vs TEST 1:
-  Extra memory:   ${(totalAlloc2KB - totalAlloc1KB).toFixed(2)} KB (${((totalAlloc2KB - totalAlloc1KB) / totalAlloc1KB * 100).toFixed(1)}%)
-  Per-object:     ${(bytesPerOp2 - bytesPerOp1).toFixed(1)} bytes/op
-  → Object creation + shape transitions + GC overhead
-  → Numeric fields within result still don't allocate
+Comparison:
+  parseInto() speedup: ${(((duration2Ms - duration1Ms) / duration2Ms) * 100).toFixed(1)}%
+  Retained delta diff: ${formatSignedKB(totalDelta2Bytes - totalDelta1Bytes)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-💡 RECOMMENDATION:
-   ✓ High performance (>1.8M ops/sec)
-   ✓ Use parseInto() for true zero-alloc hot paths
-   ✓ Use parse() for general use (object overhead is standard JS)
+Notes:
+  • This benchmark compares relative behavior on this runtime/machine.
+  • Retained deltas are not exact per-op allocations and may be negative in some runs.
+  • parseInto() removes per-call result-object creation, but bytes/ascii fields still create JS values.
 `);
 

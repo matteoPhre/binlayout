@@ -2,7 +2,7 @@
 
 Zero-dependency TypeScript library for deterministic binary message parsing and validation.
 
-> **Note on "zero-alloc":** This library prioritizes correctness and flexibility. JavaScript objects inherently allocate memory. For true zero-alloc requirements, use `parseInto()` with a pre-allocated target object in a hot path, where numeric fields won't allocate additional memory. The `bytes` fields will always create Uint8Array views, which are necessary for safe data access.
+> **Note on "zero-alloc":** In JavaScript, fully zero-allocation parsing is generally not realistic. `parseInto()` can reduce allocations by reusing the target object and is the lowest-allocation path for numeric fields. `parse()` allocates a new result object per call. `bytes` fields create `Uint8Array` views, and `ascii` fields create strings.
 
 
 ## Objective
@@ -95,7 +95,7 @@ const msg = compiled.parse(buffer); // { len: 3, payload: Uint8Array([0xAA, 0xBB
 ## Features
 
 - **Zero dependencies**: uses only Node.js built-ins and TypeScript stdlib.
-- **Zero allocations in hot path**: `parse()` creates only the output object; `parseInto()` reuses a target object.
+- **Low-allocation hot path**: `parseInto()` reuses a target object and avoids per-call result-object allocation.
 - **Deterministic**: identical input + schema = identical output, always.
 - **Full TypeScript support**: strict mode, no `any`, explicit types inferred from schema.
 - **Flexible endianness**: per-schema default or per-field override.
