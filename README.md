@@ -20,7 +20,7 @@ npm install @matteophre/binlayout
 ### Define a schema, compile it, and parse a buffer:
 
 ```ts
-import { compileSchema, crc16Ccitt } from '@matteophre/binlayout';
+import { compileSchema } from '@matteophre/binlayout';
 
 // Define the binary message structure
 const schema = {
@@ -59,13 +59,23 @@ console.log(message);
 type Message = typeof message; // { slaveId: number; functionCode: number; ... }
 ```
 
-### Validation with CRC16:
+### Validation with an injected strategy (external package):
 
 ```ts
+import { createValidationStrategy } from '@matteophre/binlayout';
+import { crc16xmodem } from 'crc';
+
+const crc16Strategy = createValidationStrategy<number>({
+  name: 'crc16-xmodem',
+  compute(data) {
+    return crc16xmodem(Buffer.from(data)) & 0xffff;
+  },
+});
+
 const payloadBuffer = buffer.slice(0, -2); // all except CRC bytes
 const expectedCrc = (buffer[5]! << 8) | buffer[4]!; // CRC in BE
 
-const isValid = crc16Ccitt.verify(payloadBuffer, expectedCrc);
+const isValid = crc16Strategy.verify(payloadBuffer, expectedCrc);
 console.log(isValid); // true/false
 ```
 
@@ -143,7 +153,7 @@ const parsed = decodeFramePayload(frame, transportDecoder, appPayloadParser);
 - **Full TypeScript support**: strict mode, no `any`, explicit types inferred from schema.
 - **Flexible endianness**: per-schema default or per-field override.
 - **Variable-length fields**: fields can depend on previous numeric fields.
-- **Validation strategies**: built-in CRC16, CRC32, Checksum8 (pluggable).
+- **Validation strategies**: dependency-free contracts for custom, injectable validators.
 - **Pluggable payload parsing**: decode transport headers separately and pass a custom parser for application data.
 
 ## Architecture

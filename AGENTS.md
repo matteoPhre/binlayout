@@ -48,6 +48,16 @@ Write code the way a senior software engineer would, expecting to maintain it fo
 - Don't leave `TODO`s or `FIXME`s without a linked issue or an explanation of why it wasn't resolved immediately.
 - Don't copy patterns from other libraries (e.g. Kaitai Struct, protobufjs) without adapting them to this project's explicit constraints (zero-dep, zero-alloc, Raspberry Pi CM3+ target).
 
+## Git workflow and commits
+
+- For non-trivial changes (new files, API changes, refactors, multi-file edits), do not work directly on `main` or `develop`: create a feature branch first.
+- Branch naming convention: `feature/<short-kebab-description>` (examples: `feature/injectable-validation-strategies`, `feature/variable-length-edge-cases`).
+- Commit messages must follow Conventional Commits: `type: concise description`.
+- Allowed types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `ci`, `chore`.
+- Keep the subject line imperative, specific, and under ~72 characters.
+- If a change affects behavior, include tests in the same commit (or immediately adjacent commit) that prove the behavior.
+- Before opening a PR, provide a short next-steps plan (remaining tasks, risks, and follow-up checks).
+
 ## Before considering a task done
 
 - Clean `tsc --noEmit`, zero warnings.
