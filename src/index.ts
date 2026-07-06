@@ -7,7 +7,7 @@
 
 // Core API
 export { compileSchema, type CompiledSchema } from './core/parser.js';
-export { type Endianness, type FieldDef, type PrimitiveType, type SchemaDef } from './core/schema.js';
+export { defineSchema, type Endianness, type FieldDef, type PrimitiveType, type SchemaDef } from './core/schema.js';
 export { type InferSchemaType } from './core/types.js';
 
 // Validation
