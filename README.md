@@ -20,20 +20,20 @@ npm install @matteophre/binlayout
 ### Define a schema, compile it, and parse a buffer:
 
 ```ts
-import { compileSchema } from '@matteophre/binlayout';
+import { compileSchema, defineSchema } from '@matteophre/binlayout';
 
 // Define the binary message structure
-const schema = {
+const schema = defineSchema({
   name: 'ModbusRTUMessage',
-  endianness: 'LE' as const, // Little Endian by default
+  endianness: 'LE', // Little Endian by default
   fields: [
-    { name: 'slaveId', type: 'uint8' as const },
-    { name: 'functionCode', type: 'uint8' as const },
-    { name: 'startAddr', type: 'uint16' as const },
-    { name: 'quantity', type: 'uint16' as const },
-    { name: 'crc', type: 'uint16' as const },
-  ] as const,
-} as const;
+    { name: 'slaveId', type: 'uint8' },
+    { name: 'functionCode', type: 'uint8' },
+    { name: 'startAddr', type: 'uint16' },
+    { name: 'quantity', type: 'uint16' },
+    { name: 'crc', type: 'uint16' },
+  ],
+});
 
 // Compile the schema once (this calculates offsets and generates optimized readers)
 const compiled = compileSchema(schema);
@@ -82,14 +82,14 @@ console.log(isValid); // true/false
 ### Variable-length fields:
 
 ```ts
-const variableSchema = {
+const variableSchema = defineSchema({
   name: 'VarMsg',
-  endianness: 'LE' as const,
+  endianness: 'LE',
   fields: [
-    { name: 'len', type: 'uint8' as const },
-    { name: 'payload', type: 'bytes' as const, lengthFrom: 'len' as const },
-  ] as const,
-} as const;
+    { name: 'len', type: 'uint8' },
+    { name: 'payload', type: 'bytes', lengthFrom: 'len' },
+  ],
+});
 
 const compiled = compileSchema(variableSchema);
 const buffer = new Uint8Array([0x03, 0xAA, 0xBB, 0xCC]);
