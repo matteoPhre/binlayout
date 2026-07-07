@@ -122,6 +122,34 @@ const headerSize = size(Header); // 9
 Numeric overflow during `encode()` is explicit: values out of range throw a typed
 `SchemaEncodeError` (never silent truncation).
 
+### Dynamic layout DSL (Phase 1 style)
+
+```ts
+import { array, bytes, object, u8, u16 } from '@matteophre/binlayout';
+
+const Message = object({
+  count: u8(),
+  values: array(u16({ endian: 'be' }), { length: 'count' }),
+  payload: bytes({ length: 'dynamic', prefix: u16({ endian: 'le' }) }),
+});
+
+const encoded = Message.encode({
+  count: 2,
+  values: [0x1234, 0xabcd],
+  payload: new Uint8Array([0x10, 0x20, 0x30]),
+});
+
+const decoded = Message.decode(encoded);
+const computedSize = Message.computeSize({
+  count: 2,
+  values: [0x1234, 0xabcd],
+  payload: new Uint8Array([0x10, 0x20, 0x30]),
+});
+```
+
+Zero-alloc guarantees apply to the Phase 0 fast path (`parseInto` on compiled schema).
+Dynamic layouts intentionally prioritize explicitness and `computeSize()` correctness over zero-alloc behavior.
+
 ### Transport framing + custom payload parser
 
 If your protocol has a transport envelope plus an application payload (for example STX/ETX framing + embedded YSON/JSON), you can keep the layers separate:

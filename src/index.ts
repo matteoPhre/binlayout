@@ -10,6 +10,8 @@ export { compileSchema, type CompiledSchema } from './core/parser.js';
 export { defineSchema, type Endianness, type FieldDef, type PrimitiveType, type SchemaDef } from './core/schema.js';
 export { type InferSchemaType } from './core/types.js';
 export {
+  array,
+  bytes,
   f32,
   f64,
   i8,
