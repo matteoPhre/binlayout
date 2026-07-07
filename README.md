@@ -96,6 +96,32 @@ const buffer = new Uint8Array([0x03, 0xAA, 0xBB, 0xCC]);
 const msg = compiled.parse(buffer); // { len: 3, payload: Uint8Array([0xAA, 0xBB, 0xCC]) }
 ```
 
+### Primitive layout DSL (Phase 0 style)
+
+```ts
+import { object, u8, u16, i16, f32, size } from '@matteophre/binlayout';
+
+const Header = object({
+  cmd: u8(),
+  sequence: u16({ endian: 'be' }),
+  temperature: i16({ endian: 'le' }),
+  ratio: f32({ endian: 'be' }),
+});
+
+const payload = Header.encode({
+  cmd: 0x42,
+  sequence: 0x1234,
+  temperature: -10,
+  ratio: 1.5,
+});
+
+const decoded = Header.decode(payload);
+const headerSize = size(Header); // 9
+```
+
+Numeric overflow during `encode()` is explicit: values out of range throw a typed
+`SchemaEncodeError` (never silent truncation).
+
 ### Transport framing + custom payload parser
 
 If your protocol has a transport envelope plus an application payload (for example STX/ETX framing + embedded YSON/JSON), you can keep the layers separate:

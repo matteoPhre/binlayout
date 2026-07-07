@@ -14,7 +14,7 @@ import {
   PRIMITIVE_BYTE_SIZES,
   type SchemaDef,
 } from './schema.js';
-import { SchemaCompileError, SchemaParseError } from '../errors.js';
+import { SchemaCompileError, SchemaEncodeError, SchemaParseError } from '../errors.js';
 
 /**
  * Specialized function to read a field from a buffer.
@@ -24,6 +24,7 @@ import { SchemaCompileError, SchemaParseError } from '../errors.js';
  * Returns the read value.
  */
 type FieldReader = (buffer: Uint8Array, offset: number) => number | Uint8Array | string;
+type FieldWriter = (buffer: Uint8Array, offset: number, value: unknown) => void;
 
 /**
  * Precompiled definition of how to read a field.
@@ -36,6 +37,7 @@ type CompiledFieldDef =
       readonly offset: number; // known absolute offset
       readonly byteLength: number; // fixed length
       readonly reader: FieldReader;
+      readonly writer: FieldWriter;
     }
   | {
       readonly type: 'variable';
@@ -43,6 +45,7 @@ type CompiledFieldDef =
       readonly offset: number; // known absolute offset up to this point
       readonly lengthFromFieldName: string; // name of the previous field that contains the length
       readonly reader: (buffer: Uint8Array, offset: number, length: number) => Uint8Array | string; // reader that accepts length
+      readonly writer: (buffer: Uint8Array, offset: number, length: number, value: unknown) => void;
     };
 
 /**
@@ -63,6 +66,16 @@ export interface CompiledSchema<_S extends SchemaDef = SchemaDef> {
    * Zero-alloc: does not create a new object, but populates the provided target.
    */
   parseInto(buffer: Uint8Array, target: Record<string, unknown>, offset?: number): Record<string, unknown>;
+
+  /**
+   * Computes the required encoded size for the provided object.
+   */
+  computeSize(input: Record<string, unknown>): number;
+
+  /**
+   * Encodes an input object into a buffer following the compiled schema.
+   */
+  encode(input: Record<string, unknown>): Uint8Array;
 }
 
 /**
@@ -139,6 +152,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
       // Generates reader for variable field
       const endianness = field.endianness ?? schema.endianness;
       const reader = makeVariableLengthReader(field.type, endianness);
+      const writer = makeVariableLengthWriter(field.name, field.type, endianness);
 
       compiledFields.push({
         type: 'variable',
@@ -146,6 +160,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         offset: fieldOffset,
         lengthFromFieldName: field.lengthFrom,
         reader,
+        writer,
       });
 
       hasVariableFields = true;
@@ -183,6 +198,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
       // Generates specialized reader function
       const endianness = field.endianness ?? schema.endianness;
       const reader = makeFieldReader(field.type, byteLength, endianness);
+      const writer = makeFieldWriter(field.name, field.type, byteLength, endianness);
 
       compiledFields.push({
         type: 'fixed',
@@ -190,6 +206,7 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
         offset: fieldOffset,
         byteLength,
         reader,
+        writer,
       });
 
       // Updates running offset (for the next field, only if the previous is not variable)
@@ -267,6 +284,57 @@ export function compileSchema<const S extends SchemaDef>(schema: S): CompiledSch
 
       return target;
     },
+
+    computeSize(input: Record<string, unknown>): number {
+      if (totalByteLength !== null) {
+        return totalByteLength;
+      }
+
+      let requiredSize = 0;
+      for (const field of compiledFields) {
+        if (field.type === 'fixed') {
+          requiredSize = Math.max(requiredSize, field.offset + field.byteLength);
+          continue;
+        }
+
+        const rawLength = input[field.lengthFromFieldName];
+        if (typeof rawLength !== 'number' || !Number.isInteger(rawLength) || rawLength < 0) {
+          throw new SchemaEncodeError(
+            `Field '${field.name}' depends on lengthFrom '${field.lengthFromFieldName}' which must be a non-negative integer`,
+            field.name,
+            'INVALID_LENGTH_FROM_VALUE',
+          );
+        }
+
+        requiredSize = Math.max(requiredSize, field.offset + rawLength);
+      }
+
+      return requiredSize;
+    },
+
+    encode(input: Record<string, unknown>): Uint8Array {
+      const buffer = new Uint8Array(this.computeSize(input));
+
+      for (const field of compiledFields) {
+        if (field.type === 'fixed') {
+          field.writer(buffer, field.offset, input[field.name]);
+          continue;
+        }
+
+        const rawLength = input[field.lengthFromFieldName];
+        if (typeof rawLength !== 'number' || !Number.isInteger(rawLength) || rawLength < 0) {
+          throw new SchemaEncodeError(
+            `Field '${field.name}' depends on lengthFrom '${field.lengthFromFieldName}' which must be a non-negative integer`,
+            field.name,
+            'INVALID_LENGTH_FROM_VALUE',
+          );
+        }
+
+        field.writer(buffer, field.offset, rawLength, input[field.name]);
+      }
+
+      return buffer;
+    },
   };
 }
 
@@ -305,6 +373,86 @@ function makeVariableLengthReader(
   } else {
     throw new Error(`Variable-length fields are only supported for 'bytes' and 'ascii', not '${type}'`);
   }
+}
+
+/**
+ * Creates a writer for variable-length fields.
+ * The length is provided by the corresponding length field.
+ */
+function makeVariableLengthWriter(
+  fieldName: string,
+  type: PrimitiveType,
+  _endianness: Endianness,
+): (buffer: Uint8Array, offset: number, length: number, value: unknown) => void {
+  if (type === 'bytes') {
+    return (buffer: Uint8Array, offset: number, length: number, value: unknown): void => {
+      if (!(value instanceof Uint8Array)) {
+        throw new SchemaEncodeError(
+          `Field '${fieldName}' must be a Uint8Array`,
+          fieldName,
+          'INVALID_FIELD_TYPE',
+        );
+      }
+      if (value.length !== length) {
+        throw new SchemaEncodeError(
+          `Field '${fieldName}' length mismatch: expected ${length}, got ${value.length}`,
+          fieldName,
+          'LENGTH_MISMATCH',
+        );
+      }
+      if (offset + length > buffer.length) {
+        throw new SchemaEncodeError(
+          `Field '${fieldName}' exceeds output buffer bounds`,
+          fieldName,
+          'BUFFER_OVERFLOW',
+        );
+      }
+      buffer.set(value, offset);
+    };
+  }
+
+  if (type === 'ascii') {
+    return (buffer: Uint8Array, offset: number, length: number, value: unknown): void => {
+      if (typeof value !== 'string') {
+        throw new SchemaEncodeError(
+          `Field '${fieldName}' must be a string`,
+          fieldName,
+          'INVALID_FIELD_TYPE',
+        );
+      }
+      if (value.length !== length) {
+        throw new SchemaEncodeError(
+          `Field '${fieldName}' length mismatch: expected ${length}, got ${value.length}`,
+          fieldName,
+          'LENGTH_MISMATCH',
+        );
+      }
+      if (offset + length > buffer.length) {
+        throw new SchemaEncodeError(
+          `Field '${fieldName}' exceeds output buffer bounds`,
+          fieldName,
+          'BUFFER_OVERFLOW',
+        );
+      }
+
+      for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if (code > 0x7f) {
+          throw new SchemaEncodeError(
+            `Field '${fieldName}' contains non-ASCII character at index ${i}`,
+            fieldName,
+            'NON_ASCII_CHARACTER',
+          );
+        }
+        buffer[offset + i] = code;
+      }
+    };
+  }
+
+  throw new SchemaCompileError(
+    `Variable-length fields are only supported for 'bytes' and 'ascii', not '${type}'`,
+    'UNSUPPORTED_VARIABLE_FIELD_TYPE',
+  );
 }
 
 /**
@@ -399,6 +547,205 @@ function makeFieldReader(type: PrimitiveType, byteLength: number, endianness: En
         throw new Error(`Unknown type: ${_never}`);
     }
   };
+}
+
+/**
+ * Creates a specialized writer for fixed-length fields.
+ * Integer overflow/underflow is explicit: encode throws on out-of-range values.
+ */
+function makeFieldWriter(
+  fieldName: string,
+  type: PrimitiveType,
+  byteLength: number,
+  endianness: Endianness,
+): FieldWriter {
+  switch (type) {
+    case 'uint8':
+      return (buffer, offset, value) => {
+        const n = assertIntegerRange(fieldName, value, 0, 0xff, type);
+        buffer[offset] = n;
+      };
+
+    case 'uint16':
+      return (buffer, offset, value) => {
+        const n = assertIntegerRange(fieldName, value, 0, 0xffff, type);
+        if (endianness === 'LE') {
+          buffer[offset] = n & 0xff;
+          buffer[offset + 1] = (n >>> 8) & 0xff;
+        } else {
+          buffer[offset] = (n >>> 8) & 0xff;
+          buffer[offset + 1] = n & 0xff;
+        }
+      };
+
+    case 'uint32':
+      return (buffer, offset, value) => {
+        const n = assertIntegerRange(fieldName, value, 0, 0xffff_ffff, type);
+        if (endianness === 'LE') {
+          buffer[offset] = n & 0xff;
+          buffer[offset + 1] = (n >>> 8) & 0xff;
+          buffer[offset + 2] = (n >>> 16) & 0xff;
+          buffer[offset + 3] = (n >>> 24) & 0xff;
+        } else {
+          buffer[offset] = (n >>> 24) & 0xff;
+          buffer[offset + 1] = (n >>> 16) & 0xff;
+          buffer[offset + 2] = (n >>> 8) & 0xff;
+          buffer[offset + 3] = n & 0xff;
+        }
+      };
+
+    case 'int8':
+      return (buffer, offset, value) => {
+        const n = assertIntegerRange(fieldName, value, -0x80, 0x7f, type);
+        buffer[offset] = n & 0xff;
+      };
+
+    case 'int16':
+      return (buffer, offset, value) => {
+        const n = assertIntegerRange(fieldName, value, -0x8000, 0x7fff, type);
+        const encoded = n < 0 ? n + 0x1_0000 : n;
+        if (endianness === 'LE') {
+          buffer[offset] = encoded & 0xff;
+          buffer[offset + 1] = (encoded >>> 8) & 0xff;
+        } else {
+          buffer[offset] = (encoded >>> 8) & 0xff;
+          buffer[offset + 1] = encoded & 0xff;
+        }
+      };
+
+    case 'int32':
+      return (buffer, offset, value) => {
+        const n = assertIntegerRange(fieldName, value, -0x8000_0000, 0x7fff_ffff, type);
+        const encoded = n < 0 ? n + 0x1_0000_0000 : n;
+        if (endianness === 'LE') {
+          buffer[offset] = encoded & 0xff;
+          buffer[offset + 1] = (encoded >>> 8) & 0xff;
+          buffer[offset + 2] = (encoded >>> 16) & 0xff;
+          buffer[offset + 3] = (encoded >>> 24) & 0xff;
+        } else {
+          buffer[offset] = (encoded >>> 24) & 0xff;
+          buffer[offset + 1] = (encoded >>> 16) & 0xff;
+          buffer[offset + 2] = (encoded >>> 8) & 0xff;
+          buffer[offset + 3] = encoded & 0xff;
+        }
+      };
+
+    case 'float32': {
+      const tempBuffer = new ArrayBuffer(4);
+      const tempView = new DataView(tempBuffer);
+
+      return (buffer, offset, value) => {
+        const n = assertNumber(fieldName, value, type);
+        tempView.setFloat32(0, n, endianness === 'LE');
+        buffer[offset] = tempView.getUint8(0);
+        buffer[offset + 1] = tempView.getUint8(1);
+        buffer[offset + 2] = tempView.getUint8(2);
+        buffer[offset + 3] = tempView.getUint8(3);
+      };
+    }
+
+    case 'float64': {
+      const tempBuffer = new ArrayBuffer(8);
+      const tempView = new DataView(tempBuffer);
+
+      return (buffer, offset, value) => {
+        const n = assertNumber(fieldName, value, type);
+        tempView.setFloat64(0, n, endianness === 'LE');
+        for (let i = 0; i < 8; i++) {
+          buffer[offset + i] = tempView.getUint8(i);
+        }
+      };
+    }
+
+    case 'bytes':
+      return (buffer, offset, value) => {
+        if (!(value instanceof Uint8Array)) {
+          throw new SchemaEncodeError(
+            `Field '${fieldName}' must be a Uint8Array`,
+            fieldName,
+            'INVALID_FIELD_TYPE',
+          );
+        }
+        if (value.length !== byteLength) {
+          throw new SchemaEncodeError(
+            `Field '${fieldName}' length mismatch: expected ${byteLength}, got ${value.length}`,
+            fieldName,
+            'LENGTH_MISMATCH',
+          );
+        }
+        buffer.set(value, offset);
+      };
+
+    case 'ascii':
+      return (buffer, offset, value) => {
+        if (typeof value !== 'string') {
+          throw new SchemaEncodeError(
+            `Field '${fieldName}' must be a string`,
+            fieldName,
+            'INVALID_FIELD_TYPE',
+          );
+        }
+        if (value.length !== byteLength) {
+          throw new SchemaEncodeError(
+            `Field '${fieldName}' length mismatch: expected ${byteLength}, got ${value.length}`,
+            fieldName,
+            'LENGTH_MISMATCH',
+          );
+        }
+        for (let i = 0; i < value.length; i++) {
+          const code = value.charCodeAt(i);
+          if (code > 0x7f) {
+            throw new SchemaEncodeError(
+              `Field '${fieldName}' contains non-ASCII character at index ${i}`,
+              fieldName,
+              'NON_ASCII_CHARACTER',
+            );
+          }
+          buffer[offset + i] = code;
+        }
+      };
+
+    default: {
+      const _never: never = type;
+      throw new SchemaCompileError(`Unknown type '${_never}'`, 'UNKNOWN_PRIMITIVE_TYPE');
+    }
+  }
+}
+
+function assertNumber(fieldName: string, value: unknown, type: PrimitiveType): number {
+  if (typeof value !== 'number') {
+    throw new SchemaEncodeError(
+      `Field '${fieldName}' must be a number for type '${type}'`,
+      fieldName,
+      'INVALID_FIELD_TYPE',
+    );
+  }
+  return value;
+}
+
+function assertIntegerRange(
+  fieldName: string,
+  value: unknown,
+  min: number,
+  max: number,
+  type: PrimitiveType,
+): number {
+  const numberValue = assertNumber(fieldName, value, type);
+  if (!Number.isInteger(numberValue)) {
+    throw new SchemaEncodeError(
+      `Field '${fieldName}' must be an integer for type '${type}'`,
+      fieldName,
+      'INVALID_INTEGER',
+    );
+  }
+  if (numberValue < min || numberValue > max) {
+    throw new SchemaEncodeError(
+      `Field '${fieldName}' value ${numberValue} is out of range for '${type}' [${min}, ${max}]`,
+      fieldName,
+      'NUMERIC_OVERFLOW',
+    );
+  }
+  return numberValue;
 }
 
 /**
