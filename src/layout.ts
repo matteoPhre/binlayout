@@ -2,19 +2,21 @@ import { SchemaEncodeError, SchemaParseError } from './errors.js';
 import type { PrimitiveType } from './core/schema.js';
 
 export type LayoutEndian = 'le' | 'be';
+export type BitOrder = 'lsb' | 'msb';
 
 const DEFAULT_ENDIAN: LayoutEndian = 'le';
 
 interface NumericOptions {
   readonly endian?: LayoutEndian;
+  readonly align?: number;
 }
 
-interface PrimitiveDescriptor<TType extends PrimitiveType, TValue, TSize extends number> {
+interface PrimitiveDescriptor<TType extends PrimitiveType, TSize extends number> {
   readonly kind: 'primitive';
   readonly primitiveType: TType;
-  readonly valueType: TValue;
   readonly size: TSize;
   readonly endian: LayoutEndian;
+  readonly align?: number;
 }
 
 type NumericPrimitiveType =
@@ -27,39 +29,61 @@ type NumericPrimitiveType =
   | 'float32'
   | 'float64';
 
-type NumericPrimitiveDescriptor = PrimitiveDescriptor<NumericPrimitiveType, number, number>;
+type NumericPrimitiveDescriptor = PrimitiveDescriptor<NumericPrimitiveType, number>;
 type LengthPrefixPrimitiveType = 'uint8' | 'uint16' | 'uint32';
-type LengthPrefixPrimitiveDescriptor = PrimitiveDescriptor<LengthPrefixPrimitiveType, number, number>;
+type LengthPrefixPrimitiveDescriptor = PrimitiveDescriptor<LengthPrefixPrimitiveType, number>;
 
 interface BytesFromFieldDescriptor {
   readonly kind: 'bytes-from-field';
-  readonly valueType: Uint8Array;
   readonly lengthFrom: string;
 }
 
 interface BytesPrefixedDescriptor {
   readonly kind: 'bytes-prefixed';
-  readonly valueType: Uint8Array;
   readonly prefix: LengthPrefixPrimitiveDescriptor;
 }
 
 interface ArrayDescriptor<TItem extends NumericPrimitiveDescriptor = NumericPrimitiveDescriptor> {
   readonly kind: 'array';
-  readonly valueType: ReadonlyArray<number>;
   readonly item: TItem;
   readonly length: number | string;
 }
 
-type FieldDescriptor = NumericPrimitiveDescriptor | BytesFromFieldDescriptor | BytesPrefixedDescriptor | ArrayDescriptor;
+interface PaddingDescriptor {
+  readonly kind: 'padding';
+  readonly bytes: number;
+}
+
+type BitfieldFields = Record<string, number>;
+
+interface BitfieldDescriptor<TFields extends BitfieldFields = BitfieldFields> {
+  readonly kind: 'bitfield';
+  readonly fields: TFields;
+  readonly order: BitOrder;
+  readonly totalBits: number;
+}
+
+type FieldDescriptor =
+  | NumericPrimitiveDescriptor
+  | BytesFromFieldDescriptor
+  | BytesPrefixedDescriptor
+  | ArrayDescriptor
+  | PaddingDescriptor
+  | BitfieldDescriptor;
+
 type DescriptorMap = Record<string, FieldDescriptor>;
 
-type InferPrimitiveValue<P extends PrimitiveDescriptor<PrimitiveType, unknown, number>> =
-  P extends PrimitiveDescriptor<NumericPrimitiveType, infer TValue, number>
-    ? TValue
+type InferPrimitiveValue<P extends PrimitiveDescriptor<PrimitiveType, number>> =
+  P extends PrimitiveDescriptor<NumericPrimitiveType, number>
+    ? number
     : never;
 
+type InferBitfieldValue<TFields extends BitfieldFields> = {
+  [K in keyof TFields]: number;
+};
+
 type InferFieldValue<TField extends FieldDescriptor> =
-  TField extends PrimitiveDescriptor<NumericPrimitiveType, unknown, number>
+  TField extends PrimitiveDescriptor<NumericPrimitiveType, number>
     ? InferPrimitiveValue<TField>
     : TField extends BytesFromFieldDescriptor
       ? Uint8Array
@@ -67,10 +91,12 @@ type InferFieldValue<TField extends FieldDescriptor> =
         ? Uint8Array
         : TField extends ArrayDescriptor<NumericPrimitiveDescriptor>
           ? number[]
-          : never;
+          : TField extends BitfieldDescriptor<infer TBitfield>
+            ? InferBitfieldValue<TBitfield>
+            : never;
 
 export type InferObjectType<TFields extends DescriptorMap> = {
-  [K in keyof TFields]: InferFieldValue<TFields[K]>;
+  [K in keyof TFields as InferFieldValue<TFields[K]> extends never ? never : K]: InferFieldValue<TFields[K]>;
 };
 
 export interface CompiledObjectLayout<T> {
@@ -84,45 +110,57 @@ function numericPrimitive<TType extends PrimitiveType, TSize extends number>(
   primitiveType: TType,
   size: TSize,
   options: NumericOptions | undefined,
-): PrimitiveDescriptor<TType, number, TSize> {
-  return {
+): PrimitiveDescriptor<TType, TSize> {
+  if (options?.align !== undefined && (!Number.isInteger(options.align) || options.align <= 0)) {
+    throw new SchemaEncodeError('align must be a positive integer', null, 'INVALID_ALIGN');
+  }
+
+  const base: PrimitiveDescriptor<TType, TSize> = {
     kind: 'primitive',
     primitiveType,
-    valueType: 0,
     size,
     endian: options?.endian ?? DEFAULT_ENDIAN,
   };
+
+  if (options?.align !== undefined) {
+    return {
+      ...base,
+      align: options.align,
+    };
+  }
+
+  return base;
 }
 
-export function u8(options?: NumericOptions): PrimitiveDescriptor<'uint8', number, 1> {
+export function u8(options?: NumericOptions): PrimitiveDescriptor<'uint8', 1> {
   return numericPrimitive('uint8', 1, options);
 }
 
-export function u16(options?: NumericOptions): PrimitiveDescriptor<'uint16', number, 2> {
+export function u16(options?: NumericOptions): PrimitiveDescriptor<'uint16', 2> {
   return numericPrimitive('uint16', 2, options);
 }
 
-export function u32(options?: NumericOptions): PrimitiveDescriptor<'uint32', number, 4> {
+export function u32(options?: NumericOptions): PrimitiveDescriptor<'uint32', 4> {
   return numericPrimitive('uint32', 4, options);
 }
 
-export function i8(options?: NumericOptions): PrimitiveDescriptor<'int8', number, 1> {
+export function i8(options?: NumericOptions): PrimitiveDescriptor<'int8', 1> {
   return numericPrimitive('int8', 1, options);
 }
 
-export function i16(options?: NumericOptions): PrimitiveDescriptor<'int16', number, 2> {
+export function i16(options?: NumericOptions): PrimitiveDescriptor<'int16', 2> {
   return numericPrimitive('int16', 2, options);
 }
 
-export function i32(options?: NumericOptions): PrimitiveDescriptor<'int32', number, 4> {
+export function i32(options?: NumericOptions): PrimitiveDescriptor<'int32', 4> {
   return numericPrimitive('int32', 4, options);
 }
 
-export function f32(options?: NumericOptions): PrimitiveDescriptor<'float32', number, 4> {
+export function f32(options?: NumericOptions): PrimitiveDescriptor<'float32', 4> {
   return numericPrimitive('float32', 4, options);
 }
 
-export function f64(options?: NumericOptions): PrimitiveDescriptor<'float64', number, 8> {
+export function f64(options?: NumericOptions): PrimitiveDescriptor<'float64', 8> {
   return numericPrimitive('float64', 8, options);
 }
 
@@ -137,14 +175,12 @@ export function bytes(lengthOrOptions: string | BytesPrefixOptions): BytesFromFi
   if (typeof lengthOrOptions === 'string') {
     return {
       kind: 'bytes-from-field',
-      valueType: new Uint8Array(),
       lengthFrom: lengthOrOptions,
     };
   }
 
   return {
     kind: 'bytes-prefixed',
-    valueType: new Uint8Array(),
     prefix: lengthOrOptions.prefix,
   };
 }
@@ -159,9 +195,48 @@ export function array<TItem extends NumericPrimitiveDescriptor>(
 ): ArrayDescriptor<TItem> {
   return {
     kind: 'array',
-    valueType: [],
     item,
     length: options.length,
+  };
+}
+
+export function padding(bytesToSkip: number): PaddingDescriptor {
+  if (!Number.isInteger(bytesToSkip) || bytesToSkip <= 0) {
+    throw new SchemaEncodeError('padding(n) requires a positive integer', null, 'INVALID_PADDING');
+  }
+
+  return {
+    kind: 'padding',
+    bytes: bytesToSkip,
+  };
+}
+
+export function bitfield<const TFields extends BitfieldFields>(
+  fields: TFields,
+  options?: { readonly order?: BitOrder },
+): BitfieldDescriptor<TFields> {
+  const entries = Object.entries(fields);
+  if (entries.length === 0) {
+    throw new SchemaEncodeError('bitfield requires at least one field', null, 'INVALID_BITFIELD');
+  }
+
+  let totalBits = 0;
+  for (const [name, bits] of entries) {
+    if (!Number.isInteger(bits) || bits <= 0 || bits > 32) {
+      throw new SchemaEncodeError(
+        `bitfield '${name}' must have 1..32 bits`,
+        name,
+        'INVALID_BIT_COUNT',
+      );
+    }
+    totalBits += bits;
+  }
+
+  return {
+    kind: 'bitfield',
+    fields,
+    order: options?.order ?? 'lsb',
+    totalBits,
   };
 }
 
@@ -169,9 +244,10 @@ export function object<const TFields extends DescriptorMap>(
   fields: TFields,
 ): CompiledObjectLayout<InferObjectType<TFields>> {
   const entries = Object.entries(fields) as Array<[keyof TFields & string, TFields[keyof TFields]]>;
+  validateComposition(entries);
 
   const staticSize = isStaticLayout(entries)
-    ? entries.reduce((total, [, descriptor]) => total + staticDescriptorSize(descriptor), 0)
+    ? computeLayoutSizeStatic(entries)
     : null;
 
   return {
@@ -192,9 +268,47 @@ export function size(layout: CompiledObjectLayout<unknown>): number | null {
   return layout.size;
 }
 
+function validateComposition(entries: Array<[string, FieldDescriptor]>): void {
+  let bitOffset = 0;
+
+  for (const [fieldName, descriptor] of entries) {
+    if (descriptor.kind === 'bitfield') {
+      bitOffset += descriptor.totalBits;
+      continue;
+    }
+
+    if (bitOffset % 8 !== 0) {
+      throw new SchemaEncodeError(
+        `Field '${fieldName}' is byte-aligned but previous bitfield left partial byte`,
+        fieldName,
+        'BITFIELD_BYTE_ALIGNMENT_VIOLATION',
+      );
+    }
+
+    const aligned = alignBitOffset(bitOffset, descriptor.kind === 'primitive' ? descriptor.align : undefined);
+    bitOffset = aligned + descriptorBitSizeForValidation(descriptor);
+  }
+}
+
+function descriptorBitSizeForValidation(descriptor: FieldDescriptor): number {
+  if (descriptor.kind === 'primitive') {
+    return descriptor.size * 8;
+  }
+  if (descriptor.kind === 'bytes-prefixed') {
+    return descriptor.prefix.size * 8;
+  }
+  if (descriptor.kind === 'bytes-from-field' || descriptor.kind === 'array') {
+    return 0;
+  }
+  if (descriptor.kind === 'padding') {
+    return descriptor.bytes * 8;
+  }
+  return descriptor.totalBits;
+}
+
 function isStaticLayout(entries: Array<[string, FieldDescriptor]>): boolean {
   return entries.every(([, descriptor]) => {
-    if (descriptor.kind === 'primitive') {
+    if (descriptor.kind === 'primitive' || descriptor.kind === 'padding' || descriptor.kind === 'bitfield') {
       return true;
     }
     if (descriptor.kind === 'array') {
@@ -204,29 +318,59 @@ function isStaticLayout(entries: Array<[string, FieldDescriptor]>): boolean {
   });
 }
 
-function staticDescriptorSize(descriptor: FieldDescriptor): number {
-  if (descriptor.kind === 'primitive') {
-    return descriptor.size;
-  }
-  if (descriptor.kind === 'array') {
-    if (typeof descriptor.length !== 'number') {
-      throw new SchemaEncodeError('Array length is dynamic', null, 'DYNAMIC_SIZE');
+function computeLayoutSizeStatic(entries: Array<[string, FieldDescriptor]>): number {
+  let bitOffset = 0;
+
+  for (const [, descriptor] of entries) {
+    if (descriptor.kind === 'bitfield') {
+      bitOffset += descriptor.totalBits;
+      continue;
     }
-    return descriptor.length * descriptor.item.size;
+
+    bitOffset = alignBitOffset(bitOffset, descriptor.kind === 'primitive' ? descriptor.align : undefined);
+
+    if (descriptor.kind === 'primitive') {
+      bitOffset += descriptor.size * 8;
+    } else if (descriptor.kind === 'padding') {
+      bitOffset += descriptor.bytes * 8;
+    } else if (descriptor.kind === 'array') {
+      if (typeof descriptor.length !== 'number') {
+        throw new SchemaEncodeError('array length is dynamic', null, 'DYNAMIC_SIZE');
+      }
+      bitOffset += descriptor.length * descriptor.item.size * 8;
+    }
   }
-  throw new SchemaEncodeError('Descriptor has dynamic size', null, 'DYNAMIC_SIZE');
+
+  return Math.ceil(bitOffset / 8);
 }
 
 function computeLayoutSize(entries: Array<[string, FieldDescriptor]>, input: Record<string, unknown>): number {
-  let cursor = 0;
+  let bitOffset = 0;
+
   for (const [fieldName, descriptor] of entries) {
+    if (descriptor.kind === 'bitfield') {
+      const value = input[fieldName];
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new SchemaEncodeError(`Field '${fieldName}' must be an object`, fieldName, 'INVALID_FIELD_TYPE');
+      }
+      bitOffset += descriptor.totalBits;
+      continue;
+    }
+
+    bitOffset = alignBitOffset(bitOffset, descriptor.kind === 'primitive' ? descriptor.align : undefined);
+
     if (descriptor.kind === 'primitive') {
-      cursor += descriptor.size;
+      bitOffset += descriptor.size * 8;
+      continue;
+    }
+
+    if (descriptor.kind === 'padding') {
+      bitOffset += descriptor.bytes * 8;
       continue;
     }
 
     if (descriptor.kind === 'bytes-from-field') {
-      cursor += resolveLengthFromInput(input, descriptor.lengthFrom, fieldName);
+      bitOffset += resolveLengthFromInput(input, descriptor.lengthFrom, fieldName) * 8;
       continue;
     }
 
@@ -235,7 +379,8 @@ function computeLayoutSize(entries: Array<[string, FieldDescriptor]>, input: Rec
       if (!(value instanceof Uint8Array)) {
         throw new SchemaEncodeError(`Field '${fieldName}' must be Uint8Array`, fieldName, 'INVALID_FIELD_TYPE');
       }
-      cursor += descriptor.prefix.size + value.length;
+      bitOffset += descriptor.prefix.size * 8;
+      bitOffset += value.length * 8;
       continue;
     }
 
@@ -251,20 +396,39 @@ function computeLayoutSize(entries: Array<[string, FieldDescriptor]>, input: Rec
         'LENGTH_MISMATCH',
       );
     }
-    cursor += arrayLength * descriptor.item.size;
+    bitOffset += arrayLength * descriptor.item.size * 8;
   }
-  return cursor;
+
+  return Math.ceil(bitOffset / 8);
 }
 
 function encodeLayout(entries: Array<[string, FieldDescriptor]>, input: Record<string, unknown>): Uint8Array {
-  const size = computeLayoutSize(entries, input);
-  const buffer = new Uint8Array(size);
-  let cursor = 0;
+  const totalSize = computeLayoutSize(entries, input);
+  const buffer = new Uint8Array(totalSize);
+  let bitOffset = 0;
 
   for (const [fieldName, descriptor] of entries) {
+    if (descriptor.kind === 'bitfield') {
+      const source = input[fieldName];
+      if (typeof source !== 'object' || source === null || Array.isArray(source)) {
+        throw new SchemaEncodeError(`Field '${fieldName}' must be an object`, fieldName, 'INVALID_FIELD_TYPE');
+      }
+      writeBitfield(buffer, bitOffset, descriptor, source as Record<string, unknown>, fieldName);
+      bitOffset += descriptor.totalBits;
+      continue;
+    }
+
+    bitOffset = alignBitOffset(bitOffset, descriptor.kind === 'primitive' ? descriptor.align : undefined);
+    const byteOffset = bitOffset / 8;
+
     if (descriptor.kind === 'primitive') {
-      writePrimitive(buffer, cursor, descriptor, input[fieldName], fieldName);
-      cursor += descriptor.size;
+      writePrimitive(buffer, byteOffset, descriptor, input[fieldName], fieldName);
+      bitOffset += descriptor.size * 8;
+      continue;
+    }
+
+    if (descriptor.kind === 'padding') {
+      bitOffset += descriptor.bytes * 8;
       continue;
     }
 
@@ -281,8 +445,8 @@ function encodeLayout(entries: Array<[string, FieldDescriptor]>, input: Record<s
           'LENGTH_MISMATCH',
         );
       }
-      buffer.set(value, cursor);
-      cursor += expectedLength;
+      buffer.set(value, byteOffset);
+      bitOffset += expectedLength * 8;
       continue;
     }
 
@@ -291,10 +455,10 @@ function encodeLayout(entries: Array<[string, FieldDescriptor]>, input: Record<s
       if (!(value instanceof Uint8Array)) {
         throw new SchemaEncodeError(`Field '${fieldName}' must be Uint8Array`, fieldName, 'INVALID_FIELD_TYPE');
       }
-      writePrimitive(buffer, cursor, descriptor.prefix, value.length, fieldName);
-      cursor += descriptor.prefix.size;
-      buffer.set(value, cursor);
-      cursor += value.length;
+      writePrimitive(buffer, byteOffset, descriptor.prefix, value.length, fieldName);
+      bitOffset += descriptor.prefix.size * 8;
+      buffer.set(value, bitOffset / 8);
+      bitOffset += value.length * 8;
       continue;
     }
 
@@ -302,6 +466,7 @@ function encodeLayout(entries: Array<[string, FieldDescriptor]>, input: Record<s
     if (!Array.isArray(values)) {
       throw new SchemaEncodeError(`Field '${fieldName}' must be an array`, fieldName, 'INVALID_FIELD_TYPE');
     }
+
     const expectedLength = resolveArrayLength(input, descriptor.length, fieldName);
     if (values.length !== expectedLength) {
       throw new SchemaEncodeError(
@@ -310,9 +475,10 @@ function encodeLayout(entries: Array<[string, FieldDescriptor]>, input: Record<s
         'LENGTH_MISMATCH',
       );
     }
+
     for (const value of values) {
-      writePrimitive(buffer, cursor, descriptor.item, value, fieldName);
-      cursor += descriptor.item.size;
+      writePrimitive(buffer, bitOffset / 8, descriptor.item, value, fieldName);
+      bitOffset += descriptor.item.size * 8;
     }
   }
 
@@ -321,37 +487,52 @@ function encodeLayout(entries: Array<[string, FieldDescriptor]>, input: Record<s
 
 function decodeLayout(entries: Array<[string, FieldDescriptor]>, buffer: Uint8Array, offset: number): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  let cursor = offset;
+  let bitOffset = offset * 8;
 
   for (const [fieldName, descriptor] of entries) {
+    if (descriptor.kind === 'bitfield') {
+      result[fieldName] = readBitfield(buffer, bitOffset, descriptor, fieldName);
+      bitOffset += descriptor.totalBits;
+      continue;
+    }
+
+    bitOffset = alignBitOffset(bitOffset, descriptor.kind === 'primitive' ? descriptor.align : undefined);
+    const byteOffset = bitOffset / 8;
+
     if (descriptor.kind === 'primitive') {
-      result[fieldName] = readPrimitive(buffer, cursor, descriptor, fieldName);
-      cursor += descriptor.size;
+      result[fieldName] = readPrimitive(buffer, byteOffset, descriptor, fieldName);
+      bitOffset += descriptor.size * 8;
+      continue;
+    }
+
+    if (descriptor.kind === 'padding') {
+      bitOffset += descriptor.bytes * 8;
       continue;
     }
 
     if (descriptor.kind === 'bytes-from-field') {
       const length = resolveLengthFromRecord(result, descriptor.lengthFrom, fieldName);
-      ensureBounds(buffer, cursor, length, fieldName);
-      result[fieldName] = buffer.subarray(cursor, cursor + length);
-      cursor += length;
+      ensureBounds(buffer, byteOffset, length, fieldName);
+      result[fieldName] = buffer.subarray(byteOffset, byteOffset + length);
+      bitOffset += length * 8;
       continue;
     }
 
     if (descriptor.kind === 'bytes-prefixed') {
-      const dynamicLength = readPrimitive(buffer, cursor, descriptor.prefix, fieldName);
-      if (typeof dynamicLength !== 'number' || !Number.isInteger(dynamicLength) || dynamicLength < 0) {
+      const dynamicLength = readPrimitive(buffer, byteOffset, descriptor.prefix, fieldName);
+      if (dynamicLength < 0 || !Number.isInteger(dynamicLength)) {
         throw new SchemaParseError(
           `Invalid dynamic length for field '${fieldName}'`,
-          cursor,
+          byteOffset,
           fieldName,
           'INVALID_DYNAMIC_LENGTH',
         );
       }
-      cursor += descriptor.prefix.size;
-      ensureBounds(buffer, cursor, dynamicLength, fieldName);
-      result[fieldName] = buffer.subarray(cursor, cursor + dynamicLength);
-      cursor += dynamicLength;
+      bitOffset += descriptor.prefix.size * 8;
+      const payloadOffset = bitOffset / 8;
+      ensureBounds(buffer, payloadOffset, dynamicLength, fieldName);
+      result[fieldName] = buffer.subarray(payloadOffset, payloadOffset + dynamicLength);
+      bitOffset += dynamicLength * 8;
       continue;
     }
 
@@ -361,22 +542,121 @@ function decodeLayout(entries: Array<[string, FieldDescriptor]>, buffer: Uint8Ar
 
     const values: number[] = [];
     for (let index = 0; index < arrayLength; index++) {
-      const value = readPrimitive(buffer, cursor, descriptor.item, fieldName);
-      if (typeof value !== 'number') {
-        throw new SchemaParseError(
-          `Array field '${fieldName}' item at index ${index} is not numeric`,
-          cursor,
-          fieldName,
-          'INVALID_ARRAY_ITEM',
-        );
-      }
-      values.push(value);
-      cursor += descriptor.item.size;
+      values.push(readPrimitive(buffer, bitOffset / 8, descriptor.item, fieldName));
+      bitOffset += descriptor.item.size * 8;
     }
     result[fieldName] = values;
   }
 
   return result;
+}
+
+function alignBitOffset(bitOffset: number, align?: number): number {
+  if (align === undefined) {
+    return bitOffset;
+  }
+
+  if (bitOffset % 8 !== 0) {
+    throw new SchemaEncodeError(
+      'Cannot align a field when cursor is not byte-aligned',
+      null,
+      'BITFIELD_BYTE_ALIGNMENT_VIOLATION',
+    );
+  }
+
+  const bytes = bitOffset / 8;
+  const alignedBytes = Math.ceil(bytes / align) * align;
+  return alignedBytes * 8;
+}
+
+function writeBitfield(
+  buffer: Uint8Array,
+  startBitOffset: number,
+  descriptor: BitfieldDescriptor,
+  source: Record<string, unknown>,
+  fieldName: string,
+): void {
+  let localBitOffset = 0;
+
+  for (const [bitName, bitCount] of Object.entries(descriptor.fields)) {
+    const rawValue = source[bitName];
+    if (typeof rawValue !== 'number') {
+      throw new SchemaEncodeError(
+        `Bitfield '${fieldName}.${bitName}' must be a number`,
+        fieldName,
+        'INVALID_FIELD_TYPE',
+      );
+    }
+
+    const maxValue = Math.pow(2, bitCount) - 1;
+    assertIntegerRange(rawValue, 0, maxValue, `${fieldName}.${bitName}`, 'uint32');
+
+    for (let i = 0; i < bitCount; i++) {
+      const bit = descriptor.order === 'lsb'
+        ? (rawValue >> i) & 1
+        : (rawValue >> (bitCount - 1 - i)) & 1;
+
+      setBit(buffer, startBitOffset + localBitOffset + i, descriptor.order, bit);
+    }
+
+    localBitOffset += bitCount;
+  }
+}
+
+function readBitfield(
+  buffer: Uint8Array,
+  startBitOffset: number,
+  descriptor: BitfieldDescriptor,
+  fieldName: string,
+): Record<string, number> {
+  const output: Record<string, number> = {};
+  let localBitOffset = 0;
+
+  for (const [bitName, bitCount] of Object.entries(descriptor.fields)) {
+    let value = 0;
+
+    for (let i = 0; i < bitCount; i++) {
+      const bit = getBit(buffer, startBitOffset + localBitOffset + i, descriptor.order, fieldName);
+      if (descriptor.order === 'lsb') {
+        value |= bit << i;
+      } else {
+        value = (value << 1) | bit;
+      }
+    }
+
+    output[bitName] = value;
+    localBitOffset += bitCount;
+  }
+
+  return output;
+}
+
+function setBit(buffer: Uint8Array, absoluteBitOffset: number, order: BitOrder, bit: number): void {
+  const byteIndex = Math.floor(absoluteBitOffset / 8);
+  const indexInByte = absoluteBitOffset % 8;
+  const bitIndex = order === 'lsb' ? indexInByte : 7 - indexInByte;
+
+  if (bit === 1) {
+    buffer[byteIndex] = (buffer[byteIndex] ?? 0) | (1 << bitIndex);
+  }
+}
+
+function getBit(buffer: Uint8Array, absoluteBitOffset: number, order: BitOrder, fieldName: string): number {
+  const byteIndex = Math.floor(absoluteBitOffset / 8);
+  const indexInByte = absoluteBitOffset % 8;
+  const bitIndex = order === 'lsb' ? indexInByte : 7 - indexInByte;
+
+  const byte = buffer[byteIndex];
+  if (byte === undefined) {
+    throw new SchemaParseError(
+      `Insufficient buffer while reading bitfield '${fieldName}'`,
+      byteIndex,
+      fieldName,
+      'BUFFER_UNDERRUN',
+    );
+  }
+
+  return (byte >> bitIndex) & 1;
 }
 
 function resolveLengthFromInput(input: Record<string, unknown>, lengthFrom: string, fieldName: string): number {

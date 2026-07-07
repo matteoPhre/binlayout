@@ -1,16 +1,10 @@
-/**
- * @matteophre/binlayout — Entry point pubblico.
- *
- * Esporta solo le parti essenziali del core.
- * Transport-specific framers e adapters vanno importati da entry-point separati.
- */
-
 // Core API
 export { compileSchema, type CompiledSchema } from './core/parser.js';
 export { defineSchema, type Endianness, type FieldDef, type PrimitiveType, type SchemaDef } from './core/schema.js';
 export { type InferSchemaType } from './core/types.js';
 export {
   array,
+  bitfield,
   bytes,
   f32,
   f64,
@@ -18,14 +12,16 @@ export {
   i16,
   i32,
   object,
+  padding,
   size,
   u8,
   u16,
   u32,
+  type BitOrder,
   type CompiledObjectLayout,
   type InferObjectType,
   type LayoutEndian,
-} from './layout.js';
+} from './layout';
 
 // Validation
 export {
