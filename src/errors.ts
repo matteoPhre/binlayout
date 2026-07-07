@@ -38,6 +38,23 @@ export class SchemaCompileError extends Error {
 }
 
 /**
+ * Schema encode error.
+ * Thrown when an input object cannot be encoded according to schema constraints.
+ */
+export class SchemaEncodeError extends Error {
+  readonly name = 'SchemaEncodeError';
+
+  constructor(
+    message: string,
+    readonly fieldName: string | null,
+    readonly reason: string,
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, SchemaEncodeError.prototype);
+  }
+}
+
+/**
  * Validation error.
  * Thrown when data fails validation (e.g., CRC mismatch).
  */

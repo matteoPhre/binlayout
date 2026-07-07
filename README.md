@@ -20,20 +20,20 @@ npm install @matteophre/binlayout
 ### Define a schema, compile it, and parse a buffer:
 
 ```ts
-import { compileSchema } from '@matteophre/binlayout';
+import { compileSchema, defineSchema } from '@matteophre/binlayout';
 
 // Define the binary message structure
-const schema = {
+const schema = defineSchema({
   name: 'ModbusRTUMessage',
-  endianness: 'LE' as const, // Little Endian by default
+  endianness: 'LE', // Little Endian by default
   fields: [
-    { name: 'slaveId', type: 'uint8' as const },
-    { name: 'functionCode', type: 'uint8' as const },
-    { name: 'startAddr', type: 'uint16' as const },
-    { name: 'quantity', type: 'uint16' as const },
-    { name: 'crc', type: 'uint16' as const },
-  ] as const,
-} as const;
+    { name: 'slaveId', type: 'uint8' },
+    { name: 'functionCode', type: 'uint8' },
+    { name: 'startAddr', type: 'uint16' },
+    { name: 'quantity', type: 'uint16' },
+    { name: 'crc', type: 'uint16' },
+  ],
+});
 
 // Compile the schema once (this calculates offsets and generates optimized readers)
 const compiled = compileSchema(schema);
@@ -82,19 +82,73 @@ console.log(isValid); // true/false
 ### Variable-length fields:
 
 ```ts
-const variableSchema = {
+const variableSchema = defineSchema({
   name: 'VarMsg',
-  endianness: 'LE' as const,
+  endianness: 'LE',
   fields: [
-    { name: 'len', type: 'uint8' as const },
-    { name: 'payload', type: 'bytes' as const, lengthFrom: 'len' as const },
-  ] as const,
-} as const;
+    { name: 'len', type: 'uint8' },
+    { name: 'payload', type: 'bytes', lengthFrom: 'len' },
+  ],
+});
 
 const compiled = compileSchema(variableSchema);
 const buffer = new Uint8Array([0x03, 0xAA, 0xBB, 0xCC]);
 const msg = compiled.parse(buffer); // { len: 3, payload: Uint8Array([0xAA, 0xBB, 0xCC]) }
 ```
+
+### Primitive layout DSL (Phase 0 style)
+
+```ts
+import { object, u8, u16, i16, f32, size } from '@matteophre/binlayout';
+
+const Header = object({
+  cmd: u8(),
+  sequence: u16({ endian: 'be' }),
+  temperature: i16({ endian: 'le' }),
+  ratio: f32({ endian: 'be' }),
+});
+
+const payload = Header.encode({
+  cmd: 0x42,
+  sequence: 0x1234,
+  temperature: -10,
+  ratio: 1.5,
+});
+
+const decoded = Header.decode(payload);
+const headerSize = size(Header); // 9
+```
+
+Numeric overflow during `encode()` is explicit: values out of range throw a typed
+`SchemaEncodeError` (never silent truncation).
+
+### Dynamic layout DSL (Phase 1 style)
+
+```ts
+import { array, bytes, object, u8, u16 } from '@matteophre/binlayout';
+
+const Message = object({
+  count: u8(),
+  values: array(u16({ endian: 'be' }), { length: 'count' }),
+  payload: bytes({ length: 'dynamic', prefix: u16({ endian: 'le' }) }),
+});
+
+const encoded = Message.encode({
+  count: 2,
+  values: [0x1234, 0xabcd],
+  payload: new Uint8Array([0x10, 0x20, 0x30]),
+});
+
+const decoded = Message.decode(encoded);
+const computedSize = Message.computeSize({
+  count: 2,
+  values: [0x1234, 0xabcd],
+  payload: new Uint8Array([0x10, 0x20, 0x30]),
+});
+```
+
+Zero-alloc guarantees apply to the Phase 0 fast path (`parseInto` on compiled schema).
+Dynamic layouts intentionally prioritize explicitness and `computeSize()` correctness over zero-alloc behavior.
 
 ### Transport framing + custom payload parser
 

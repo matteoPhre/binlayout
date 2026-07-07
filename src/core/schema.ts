@@ -74,8 +74,18 @@ export interface SchemaDef<Fields extends readonly FieldDef[] = readonly FieldDe
   /** Default endianness for all fields that don't specify it explicitly. */
   readonly endianness: Endianness;
 
-  /** Readonly array of fields. Must be const-asserted to preserve literal names. */
+  /** Readonly array of fields. */
   readonly fields: Fields;
+}
+
+/**
+ * Helper that preserves literal field names/types through const type parameters.
+ *
+ * This allows schema declarations without using "as const" while keeping
+ * precise compile-time inference for InferSchemaType.
+ */
+export function defineSchema<const S extends SchemaDef>(schema: S): S {
+  return schema;
 }
 
 /**

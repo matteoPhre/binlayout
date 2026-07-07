@@ -5,18 +5,19 @@
 
 import { describe, it, expect } from 'vitest';
 import { compileSchema } from '../../src/core/parser.js';
+import { defineSchema } from '../../src/core/schema.js';
 import { SchemaCompileError, SchemaParseError } from '../../src/errors.js';
 
 describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   it('compila uno schema semplice con campi fissi', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'SimpleMsg',
-      endianness: 'LE' as const,
+      endianness: 'LE',
       fields: [
-        { name: 'cmd', type: 'uint8' as const },
-        { name: 'value', type: 'uint16' as const },
-      ] as const,
-    };
+        { name: 'cmd', type: 'uint8' },
+        { name: 'value', type: 'uint16' },
+      ],
+    });
 
     const compiled = compileSchema(schema);
     expect(compiled.name).toBe('SimpleMsg');
@@ -25,15 +26,15 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('calcola offset in sequenza quando non espliciti', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'SequentialOffsets',
-      endianness: 'BE' as const,
+      endianness: 'BE',
       fields: [
-        { name: 'a', type: 'uint8' as const }, // offset 0
-        { name: 'b', type: 'uint16' as const }, // offset 1
-        { name: 'c', type: 'uint32' as const }, // offset 3
-      ] as const,
-    };
+        { name: 'a', type: 'uint8' }, // offset 0
+        { name: 'b', type: 'uint16' }, // offset 1
+        { name: 'c', type: 'uint32' }, // offset 3
+      ],
+    });
 
     const compiled = compileSchema(schema);
     expect(compiled.fields[0]!.offset).toBe(0);
@@ -43,14 +44,14 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('accetta offset espliciti', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'ExplicitOffsets',
-      endianness: 'LE' as const,
+      endianness: 'LE',
       fields: [
-        { name: 'a', type: 'uint8' as const, offset: 0 },
-        { name: 'b', type: 'uint16' as const, offset: 2 },
-      ] as const,
-    };
+        { name: 'a', type: 'uint8', offset: 0 },
+        { name: 'b', type: 'uint16', offset: 2 },
+      ],
+    });
 
     const compiled = compileSchema(schema);
     expect(compiled.fields[0]!.offset).toBe(0);
@@ -58,24 +59,24 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('riconosce sovrapposizione di campi (fail fast)', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'Overlapping',
-      endianness: 'LE' as const,
+      endianness: 'LE',
       fields: [
-        { name: 'a', type: 'uint32' as const, offset: 0 },
-        { name: 'b', type: 'uint16' as const, offset: 2 }, // sovrappone con 'a'
-      ] as const,
-    };
+        { name: 'a', type: 'uint32', offset: 0 },
+        { name: 'b', type: 'uint16', offset: 2 }, // sovrappone con 'a'
+      ],
+    });
 
     expect(() => compileSchema(schema)).toThrow(SchemaCompileError);
   });
 
   it('parse uint8 big endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'U8',
-      endianness: 'BE' as const,
-      fields: [{ name: 'value', type: 'uint8' as const }] as const,
-    };
+      endianness: 'BE',
+      fields: [{ name: 'value', type: 'uint8' }],
+    });
     const compiled = compileSchema(schema);
     const buffer = new Uint8Array([0x42]);
     const result = compiled.parse(buffer);
@@ -83,11 +84,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse uint16 little endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'U16LE',
-      endianness: 'LE' as const,
-      fields: [{ name: 'value', type: 'uint16' as const }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'value', type: 'uint16' }],
+    });
     const compiled = compileSchema(schema);
     const buffer = new Uint8Array([0x34, 0x12]); // 0x1234 in LE
     const result = compiled.parse(buffer);
@@ -95,11 +96,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse uint16 big endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'U16BE',
-      endianness: 'BE' as const,
-      fields: [{ name: 'value', type: 'uint16' as const }] as const,
-    };
+      endianness: 'BE',
+      fields: [{ name: 'value', type: 'uint16' }],
+    });
     const compiled = compileSchema(schema);
     const buffer = new Uint8Array([0x12, 0x34]); // 0x1234 in BE
     const result = compiled.parse(buffer);
@@ -107,11 +108,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse uint32 little endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'U32LE',
-      endianness: 'LE' as const,
-      fields: [{ name: 'value', type: 'uint32' as const }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'value', type: 'uint32' }],
+    });
     const compiled = compileSchema(schema);
     const buffer = new Uint8Array([0x78, 0x56, 0x34, 0x12]); // 0x12345678 in LE
     const result = compiled.parse(buffer);
@@ -119,11 +120,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse uint32 big endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'U32BE',
-      endianness: 'BE' as const,
-      fields: [{ name: 'value', type: 'uint32' as const }] as const,
-    };
+      endianness: 'BE',
+      fields: [{ name: 'value', type: 'uint32' }],
+    });
     const compiled = compileSchema(schema);
     const buffer = new Uint8Array([0x12, 0x34, 0x56, 0x78]); // 0x12345678 in BE
     const result = compiled.parse(buffer);
@@ -131,11 +132,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse int8 positivo e negativo', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'I8',
-      endianness: 'BE' as const,
-      fields: [{ name: 'value', type: 'int8' as const }] as const,
-    };
+      endianness: 'BE',
+      fields: [{ name: 'value', type: 'int8' }],
+    });
     const compiled = compileSchema(schema);
 
     let buffer = new Uint8Array([0x42]);
@@ -146,11 +147,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse int16 little endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'I16LE',
-      endianness: 'LE' as const,
-      fields: [{ name: 'value', type: 'int16' as const }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'value', type: 'int16' }],
+    });
     const compiled = compileSchema(schema);
 
     let buffer = new Uint8Array([0x34, 0x12]); // 0x1234
@@ -161,11 +162,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse int32 big endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'I32BE',
-      endianness: 'BE' as const,
-      fields: [{ name: 'value', type: 'int32' as const }] as const,
-    };
+      endianness: 'BE',
+      fields: [{ name: 'value', type: 'int32' }],
+    });
     const compiled = compileSchema(schema);
 
     let buffer = new Uint8Array([0x00, 0x00, 0x00, 0x01]);
@@ -176,11 +177,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse float32 little endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'F32LE',
-      endianness: 'LE' as const,
-      fields: [{ name: 'value', type: 'float32' as const }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'value', type: 'float32' }],
+    });
     const compiled = compileSchema(schema);
 
     // 1.0 in float32 LE: 0x3f800000 → bytes: 00 00 80 3f
@@ -190,11 +191,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse float64 big endian', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'F64BE',
-      endianness: 'BE' as const,
-      fields: [{ name: 'value', type: 'float64' as const }] as const,
-    };
+      endianness: 'BE',
+      fields: [{ name: 'value', type: 'float64' }],
+    });
     const compiled = compileSchema(schema);
 
     // 1.0 in float64 BE: 0x3ff0000000000000 → bytes: 3f f0 00 00 00 00 00 00
@@ -204,11 +205,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse bytes (raw slice)', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'BytesMsg',
-      endianness: 'LE' as const,
-      fields: [{ name: 'payload', type: 'bytes' as const, length: 4 }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'payload', type: 'bytes', length: 4 }],
+    });
     const compiled = compileSchema(schema);
 
     const buffer = new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05]);
@@ -217,11 +218,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse ascii stringa', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'ASCIIMsg',
-      endianness: 'LE' as const,
-      fields: [{ name: 'text', type: 'ascii' as const, length: 5 }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'text', type: 'ascii', length: 5 }],
+    });
     const compiled = compileSchema(schema);
 
     const buffer = new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f]); // "Hello"
@@ -230,15 +231,15 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse multiple campi misti', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'MixedMsg',
-      endianness: 'LE' as const,
+      endianness: 'LE',
       fields: [
-        { name: 'cmd', type: 'uint8' as const },
-        { name: 'value', type: 'uint16' as const },
-        { name: 'flag', type: 'int8' as const },
-      ] as const,
-    };
+        { name: 'cmd', type: 'uint8' },
+        { name: 'value', type: 'uint16' },
+        { name: 'flag', type: 'int8' },
+      ],
+    });
     const compiled = compileSchema(schema);
 
     const buffer = new Uint8Array([0x42, 0x34, 0x12, 0xff]); // cmd=0x42, value=0x1234, flag=-1
@@ -249,11 +250,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parse con offset nel buffer', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'OffsetMsg',
-      endianness: 'LE' as const,
-      fields: [{ name: 'value', type: 'uint16' as const }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'value', type: 'uint16' }],
+    });
     const compiled = compileSchema(schema);
 
     const buffer = new Uint8Array([0x00, 0x00, 0x34, 0x12]); // dati utili a offset 2
@@ -262,11 +263,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('buffer insufficiente lancia SchemaParseError', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'ShortMsg',
-      endianness: 'LE' as const,
-      fields: [{ name: 'value', type: 'uint16' as const }] as const,
-    };
+      endianness: 'LE',
+      fields: [{ name: 'value', type: 'uint16' }],
+    });
     const compiled = compileSchema(schema);
 
     const buffer = new Uint8Array([0x42]); // solo 1 byte, ne serve 2
@@ -274,14 +275,14 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('endianness esplicita per singolo campo sovrascrive default', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'MixedEndian',
-      endianness: 'LE' as const,
+      endianness: 'LE',
       fields: [
-        { name: 'a', type: 'uint16' as const }, // usa LE (default)
-        { name: 'b', type: 'uint16' as const, endianness: 'BE' as const }, // forza BE
-      ] as const,
-    };
+        { name: 'a', type: 'uint16' }, // usa LE (default)
+        { name: 'b', type: 'uint16', endianness: 'BE' }, // forza BE
+      ],
+    });
     const compiled = compileSchema(schema);
 
     const buffer = new Uint8Array([0x34, 0x12, 0x12, 0x34]);
@@ -291,14 +292,14 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('parseInto riusa l\'oggetto target (zero-alloc)', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'ReuseMsg',
-      endianness: 'LE' as const,
+      endianness: 'LE',
       fields: [
-        { name: 'a', type: 'uint8' as const },
-        { name: 'b', type: 'uint8' as const },
-      ] as const,
-    };
+        { name: 'a', type: 'uint8' },
+        { name: 'b', type: 'uint8' },
+      ],
+    });
     const compiled = compileSchema(schema);
 
     const buffer = new Uint8Array([0x01, 0x02]);
@@ -313,11 +314,11 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
   });
 
   it('schema vuoto (nessun campo)', () => {
-    const schema = {
+    const schema = defineSchema({
       name: 'EmptyMsg',
-      endianness: 'LE' as const,
-      fields: [] as const,
-    };
+      endianness: 'LE',
+      fields: [],
+    });
     const compiled = compileSchema(schema);
     expect(compiled.byteLength).toBe(0);
     expect(compiled.fields).toHaveLength(0);
@@ -327,3 +328,6 @@ describe('Parser — compileSchema + parse (fixed-length fields)', () => {
     expect(result).toEqual({});
   });
 });
+
+
+

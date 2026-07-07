@@ -20,14 +20,16 @@ export type FieldTSType<F extends FieldDef> = F['type'] extends 'bytes'
  *
  * Example:
  * ```ts
- * const schema = {
+ * import { defineSchema } from './schema.js';
+ *
+ * const schema = defineSchema({
  *   name: 'Msg',
  *   endianness: 'LE',
  *   fields: [
  *     { name: 'cmd', type: 'uint8' },
  *     { name: 'value', type: 'uint16' },
- *   ] as const,
- * };
+ *   ],
+ * });
  *
  * type MsgType = InferSchemaType<typeof schema>;
  * // MsgType = { cmd: number; value: number }
