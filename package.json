@@ -38,6 +38,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/matteophre/binlayout.git"
+    "url": "git+https://github.com/matteoPhre/binlayout.git"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
